@@ -48,7 +48,7 @@ export async function GET() {
         // If your workspace uses custom stages, update the wonStages array below.
         const { data: deals } = await query("deals", {
                   filter: {
-                              stage: "Won",
+                                              stage: "Won 🎉",
                   },
                   limit: 500,
         });
