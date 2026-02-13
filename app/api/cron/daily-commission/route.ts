@@ -1,62 +1,176 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  AE_DATA,
+  BDR_DATA,
+  calcAECommission,
+  calcBDRCommission,
+  fmt,
+  fmtPct,
+  getCurrentMonthRange,
+  buildOwnerMap,
+} from "@/lib/commission-config";
+import { attioQuery, getVal } from "@/lib/attio";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  // Verify Vercel cron secret
   const auth = request.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
-    const res = await fetch(`${base}/api/commissions`);
-    if (!res.ok) throw new Error(`Commission API failed: ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    const OWNER_MAP = buildOwnerMap();
+    const { startISO, endISO, label: monthLabel } = getCurrentMonthRange();
 
-    const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/New_York" });
-    const f = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
-    const p = (n: number) => (n * 100).toFixed(1) + "%";
-    const bar = (a: number) => "▓".repeat(Math.min(Math.round(a * 10), 10)) + "░".repeat(10 - Math.min(Math.round(a * 10), 10));
-    const emojis: Record<string, string> = { jason: "🔵", austin: "🟢", kelcy: "🟡" };
-    const vars: Record<string, number> = { jason: 120000, austin: 120000, kelcy: 72000 };
+    // ─── Query Attio directly (don't call own API) ────────────────────
+    const dealsRes = await attioQuery("deals", {
+      filter: {
+        close_date: { gte: startISO, lte: endISO },
+        stage: { in: ["Closed Won", "To Be Onboarded", "Live"] },
+      },
+      limit: 500,
+    });
+    const deals = dealsRes?.data || [];
 
-    const totalNet = data.ae.reduce((s: number, a: any) => s + a.netARR, 0);
-    const totalComm = data.ae.reduce((s: number, a: any) => s + a.commission, 0) + data.bdr.commission;
+    const churnRes = await attioQuery("people", {
+      filter: { churn_reason: { is_not_empty: true } },
+      limit: 500,
+    });
+    const churnedSet = new Set(
+      (churnRes?.data || []).map((p: any) => p.id?.record_id).filter(Boolean)
+    );
+
+    // ─── Aggregate per AE ─────────────────────────────────────────────
+    const agg: Record<string, { grossARR: number; churnARR: number; dealCount: number }> = {};
+    for (const ae of AE_DATA) agg[ae.id] = { grossARR: 0, churnARR: 0, dealCount: 0 };
+
+    for (const deal of deals) {
+      const ownerUUID = getVal(deal, "owner");
+      const aeId = OWNER_MAP[ownerUUID];
+      if (!aeId || !agg[aeId]) continue;
+
+      const value = getVal(deal, "value") || 0;
+      const people = getVal(deal, "associated_people") || [];
+      const isChurned = Array.isArray(people) && people.some((pid: string) => churnedSet.has(pid));
+
+      if (isChurned) {
+        agg[aeId].churnARR += value;
+      } else {
+        agg[aeId].grossARR += value;
+        agg[aeId].dealCount += 1;
+      }
+    }
+
+    // ─── Build AE results ─────────────────────────────────────────────
+    const aeResults = AE_DATA.map((ae) => {
+      const a = agg[ae.id];
+      const netARR = a.grossARR;
+      const { commission, attainment } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
+      return { ...ae, netARR, grossARR: a.grossARR + a.churnARR, churnARR: a.churnARR, dealCount: a.dealCount, attainment, commission };
+    });
+
+    // ─── BDR ──────────────────────────────────────────────────────────
+    let maxMeetings = 0;
+    for (const deal of deals) {
+      const leadOwner = getVal(deal, "lead_owner");
+      if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
+    }
+    const { commission: bdrComm, attainment: bdrAtt } = calcBDRCommission(maxMeetings);
+
+    // ─── Slack message ────────────────────────────────────────────────
+    const bar = (att: number) => {
+      const filled = Math.min(Math.round(att * 10), 15);
+      return "█".repeat(filled) + "░".repeat(Math.max(10 - filled, 0));
+    };
+    const pct = (n: number) => (n * 100).toFixed(0) + "%";
+
+    let totalNetARR = 0;
+    let totalComm = 0;
 
     const blocks: any[] = [
-      { type: "header", text: { type: "plain_text", text: `📊 February Commission Update — ${today}`, emoji: true } },
-      { type: "section", text: { type: "mrkdwn", text: `*Team Totals:*  Net ARR: *${f(totalNet)}*  |  Total Commission: *${f(totalComm)}*` } },
+      {
+        type: "header",
+        text: { type: "plain_text", text: `📊 ${monthLabel} Commission Update` },
+      },
       { type: "divider" },
     ];
 
-    for (const ae of data.ae) {
-      const vs = ae.commission - (vars[ae.id] || 120000) / 12;
-      const st = ae.attainment >= 1.2 ? "🔥" : ae.attainment >= 1.0 ? "✅" : ae.attainment >= 0.7 ? "📈" : "⏳";
-      blocks.push({ type: "section", text: { type: "mrkdwn", text: [
-        `${emojis[ae.id] || "⚪"} *${ae.name}*  ${st}`,
-        `${bar(ae.attainment)}  *${p(ae.attainment)}* attainment`,
-        `Gross ARR: ${f(ae.grossARR)}  →  Net: *${f(ae.netARR)}*  (${ae.dealCount} deals, ${f(ae.churnARR)} churned)`,
-        `Commission: *${f(ae.commission)}*  |  vs Target: ${vs >= 0 ? "+" : ""}${f(vs)}`,
-      ].join("\n") } });
+    for (const ae of aeResults) {
+      totalNetARR += ae.netARR;
+      totalComm += ae.commission;
+      const vsTarget = ae.commission - ae.variable / 12;
+      const emoji = ae.attainment >= 1.2 ? "🔥" : ae.attainment >= 1.0 ? "✅" : "⏳";
+
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: [
+            `*${ae.name}* (AE)  ${emoji}`,
+            `${bar(ae.attainment)}  *${pct(ae.attainment)}* attainment`,
+            `Net ARR: *${fmt(ae.netARR)}* / ${fmt(ae.monthlyQuota)} quota  |  ${ae.dealCount} deals`,
+            `Commission: *${fmt(ae.commission)}*  |  vs Target: ${vsTarget >= 0 ? "+" : ""}${fmt(vsTarget)}`,
+          ].join("\n"),
+        },
+      });
     }
 
+    totalComm += bdrComm;
+    const bdrVs = bdrComm - BDR_DATA.monthlyTargetVariable;
+    const bdrEmoji = bdrAtt >= 1.25 ? "⚡" : bdrAtt >= 1.0 ? "✅" : "⏳";
+
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [
+          `🟣 *${BDR_DATA.name}* (BDR)  ${bdrEmoji}`,
+          `${bar(bdrAtt)}  *${pct(bdrAtt)}* attainment`,
+          `Meetings: *${maxMeetings}* / ${BDR_DATA.monthlyQuota} target`,
+          `Commission: *${fmt(bdrComm)}*  |  vs Target: ${bdrVs >= 0 ? "+" : ""}${fmt(bdrVs)}`,
+        ].join("\n"),
+      },
+    });
+
     blocks.push({ type: "divider" });
-    const bdrVs = data.bdr.commission - 10000 / 12;
-    const bdrSt = data.bdr.attainment >= 1.25 ? "⚡" : data.bdr.attainment >= 1.0 ? "✅" : "⏳";
-    blocks.push({ type: "section", text: { type: "mrkdwn", text: [
-      `🟣 *${data.bdr.name}* (BDR)  ${bdrSt}`,
-      `${bar(data.bdr.attainment)}  *${p(data.bdr.attainment)}* attainment`,
-      `Meetings: *${data.bdr.netMeetings}* / 15 target`,
-      `Commission: *${f(data.bdr.commission)}*  |  vs Target: ${bdrVs >= 0 ? "+" : ""}${f(bdrVs)}`,
-    ].join("\n") } });
-    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `Data from Attio at ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET  •  ${data.meta.dealCount} deals` }] });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Team Total:*  Net ARR ${fmt(totalNetARR)}  |  Total Commission ${fmt(totalComm)}`,
+      },
+    });
 
-    const slack = await fetch(process.env.SLACK_WEBHOOK_URL!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blocks }) });
-    if (!slack.ok) throw new Error(`Slack failed: ${slack.status}`);
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Data from Attio at ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET  •  ${deals.length} deals processed`,
+        },
+      ],
+    });
 
-    return NextResponse.json({ success: true, totalNet, totalComm });
+    // ─── Post to Slack ────────────────────────────────────────────────
+    if (!process.env.SLACK_WEBHOOK_URL) {
+      console.warn("SLACK_WEBHOOK_URL not set — skipping Slack post");
+      return NextResponse.json({ success: true, skippedSlack: true, totalNetARR, totalComm });
+    }
+
+    const slackRes = await fetch(process.env.SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blocks }),
+    });
+
+    if (!slackRes.ok) {
+      console.error(`Slack post failed: ${slackRes.status}`);
+      return NextResponse.json({ error: "Slack post failed" }, { status: 502 });
+    }
+
+    return NextResponse.json({ success: true, totalNetARR, totalComm });
   } catch (err: any) {
     console.error("Cron error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: "Cron job failed" }, { status: 500 });
   }
 }

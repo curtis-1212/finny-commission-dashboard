@@ -1,120 +1,177 @@
-import { NextResponse } from "next/server";
-import { AE_DATA, calcAECommission, calcBDRCommission } from "@/app/commission-config";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  AE_DATA,
+  BDR_DATA,
+  calcAECommission,
+  calcBDRCommission,
+  fmt,
+  getCurrentMonthRange,
+  buildOwnerMap,
+} from "@/lib/commission-config";
+import { attioQuery, getVal } from "@/lib/attio";
 
 export const revalidate = 60;
 
-const ATTIO = "https://api.attio.com/v2";
+export async function GET(request: NextRequest) {
+  const useLive = request.nextUrl.searchParams.get("live") === "true";
 
-const OWNER_MAP: Record<string, string> = {
-        [process.env.ATTIO_JASON_UUID || ""]: "jason",
-        [process.env.ATTIO_AUSTIN_UUID || ""]: "austin",
-        [process.env.ATTIO_KELCY_UUID || ""]: "kelcy",
-        [process.env.ATTIO_MAX_UUID || ""]: "max",
-};
+  // If not live, return the config shape for manual mode
+  if (!useLive) {
+    return NextResponse.json({
+      reps: [
+        ...AE_DATA.map((ae) => ({
+          id: ae.id,
+          name: ae.name,
+          role: ae.role,
+          initials: ae.initials,
+          color: ae.color,
+          type: "ae",
+          monthlyQuota: ae.monthlyQuota,
+          annualQuota: ae.annualQuota,
+          // Expose tier labels but NOT rates for the rate card footer
+          tierLabels: ae.tiers.map((t) => t.label),
+        })),
+        {
+          id: BDR_DATA.id,
+          name: BDR_DATA.name,
+          role: BDR_DATA.role,
+          initials: BDR_DATA.initials,
+          color: BDR_DATA.color,
+          type: "bdr",
+          monthlyQuota: BDR_DATA.monthlyQuota,
+        },
+      ],
+      mode: "manual",
+    });
+  }
 
-async function query(obj: string, body: object) {
-        const r = await fetch(`${ATTIO}/objects/${obj}/records/query`, {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${process.env.ATTIO_API_KEY}`, "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                  next: { revalidate: 60 },
-        });
-        if (!r.ok) {
-                  const errBody = await r.text();
-                  console.error(`Attio ${obj} query failed: ${r.status}`, errBody);
-                  throw new Error(`Attio ${obj} query failed: ${r.status} - ${errBody}`);
-        }
-        return r.json();
-}
+  // ─── Live mode: pull from Attio ─────────────────────────────────────────
+  try {
+    const OWNER_MAP = buildOwnerMap();
+    const { startISO, endISO, label: monthLabel } = getCurrentMonthRange();
 
-function val(record: any, slug: string): any {
-        const v = record.values?.[slug];
-        if (!v?.length) return null;
-        const f = v[0];
-        if (f.attribute_type === "currency") return f.currency_value || 0;
-        if (f.attribute_type === "number") return f.value || 0;
-        if (f.attribute_type === "text") return f.value || "";
-        if (f.attribute_type === "status") return f.status?.title || "";
-        if (f.attribute_type === "actor-reference") return f.referenced_actor_id || "";
-        if (f.attribute_type === "record-reference") return v.map((x: any) => x.target_record_id);
-        return f.value ?? f;
-}
+    // Query Attio for deals closed this month
+    const dealsRes = await attioQuery("deals", {
+      filter: {
+        close_date: { gte: startISO, lte: endISO },
+        stage: { in: ["Closed Won", "To Be Onboarded", "Live"] },
+      },
+      limit: 500,
+    });
+    const deals = dealsRes?.data || [];
 
-export async function GET() {
-        try {
-                  // Query all deals without filtering by stage to avoid unknown_filter_status_slug errors.
-          // We filter by stage client-side instead.
-          const { data: deals } = await query("deals", {
-                      limit: 500,
-          });
+    // Query churned people
+    const churnRes = await attioQuery("people", {
+      filter: { churn_reason: { is_not_empty: true } },
+      limit: 500,
+    });
+    const churnedSet = new Set(
+      (churnRes?.data || []).map((p: any) => p.id?.record_id).filter(Boolean)
+    );
 
-          // Filter deals client-side for February 2026 and won stages
-          const febStart = new Date("2026-02-01T00:00:00Z").getTime();
-                  const marStart = new Date("2026-03-01T00:00:00Z").getTime();
-                  const wonStages = new Set(["Won", "Closed Won", "To Be Onboarded", "Onboarded"]);
-                  const febDeals = (deals || []).filter((d: any) => {
-                              const stage = val(d, "stage") || "";
-                              const created = new Date(d.created_at).getTime();
-                              const inDateRange = created >= febStart && created < marStart;
-                              // Accept any stage containing "won" (case-insensitive) or matching our known stages
-                                                              const isWon = wonStages.has(stage) || stage.toLowerCase().includes("won");
-                              return inDateRange && isWon;
-                  });
+    // ─── Aggregate deals per AE ───────────────────────────────────────────
+    const agg: Record<string, { grossARR: number; churnARR: number; dealCount: number; excludedCount: number }> = {};
+    for (const ae of AE_DATA) agg[ae.id] = { grossARR: 0, churnARR: 0, dealCount: 0, excludedCount: 0 };
 
-          const personIds: string[] = [];
-                  for (const d of febDeals) {
-                              const p = val(d, "associated_people");
-                              if (Array.isArray(p)) personIds.push(...p);
-                  }
+    for (const deal of deals) {
+      const ownerUUID = getVal(deal, "owner");
+      const aeId = OWNER_MAP[ownerUUID];
+      if (!aeId || !agg[aeId]) continue;
 
-          const churned = new Set<string>();
-                  if (personIds.length > 0) {
-                              try {
-                                            const { data: cp } = await query("people", {
-                                                            filter: { record_id: { $in: [...new Set(personIds)] } },
-                                                            limit: 500,
-                                            });
-                                            for (const p of cp || []) churned.add(p.id.record_id);
-                              } catch (e) {
-                                                              console.error("People query failed (non-fatal):", e);
-                              }
-                  }
+      const value = getVal(deal, "value") || 0;
+      const people = getVal(deal, "associated_people") || [];
+      const isChurned = Array.isArray(people) && people.some((pid: string) => churnedSet.has(pid));
 
-          const agg: Record<string, { grossARR: number; churnARR: number; dealCount: number; excludedCount: number }> = {};
-                  for (const ae of AE_DATA) agg[ae.id] = { grossARR: 0, churnARR: 0, dealCount: 0, excludedCount: 0 };
+      if (isChurned) {
+        agg[aeId].churnARR += value;
+        agg[aeId].excludedCount += 1;
+      } else {
+        agg[aeId].grossARR += value;
+        agg[aeId].dealCount += 1;
+      }
+    }
 
-          for (const d of febDeals) {
-                      const aeId = OWNER_MAP[val(d, "owner")];
-                      if (!aeId || !agg[aeId]) continue;
-                      const v = val(d, "value") || 0;
-                      agg[aeId].grossARR += v;
-                      agg[aeId].dealCount += 1;
-          }
+    // ─── Calculate commissions ────────────────────────────────────────────
+    const aeResults = AE_DATA.map((ae) => {
+      const a = agg[ae.id];
+      const netARR = a.grossARR;
+      const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
+      return {
+        id: ae.id,
+        name: ae.name,
+        role: ae.role,
+        initials: ae.initials,
+        color: ae.color,
+        type: "ae" as const,
+        monthlyQuota: ae.monthlyQuota,
+        annualQuota: ae.annualQuota,
+        grossARR: a.grossARR + a.churnARR,
+        churnARR: a.churnARR,
+        netARR,
+        dealCount: a.dealCount,
+        excludedCount: a.excludedCount,
+        attainment,
+        commission,
+        tierBreakdown: tierBreakdown.map((t) => ({
+          label: t.label,
+          amount: t.amount,
+        })),
+      };
+    });
 
-          const ae = AE_DATA.map((a) => {
-                      const g = agg[a.id];
-                      const { commission, attainment } = calcAECommission(a.monthlyQuota, a.tiers, g.grossARR);
-                      return { id: a.id, name: a.name, grossARR: g.grossARR + g.churnARR, churnARR: g.churnARR, netARR: g.grossARR, dealCount: g.dealCount, excludedCount: g.excludedCount, attainment, commission };
-          });
+    // ─── BDR: count Max's meetings ────────────────────────────────────────
+    let maxMeetings = 0;
+    for (const deal of deals) {
+      const leadOwner = getVal(deal, "lead_owner");
+      if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
+    }
+    const { commission: bdrCommission, attainment: bdrAttainment } = calcBDRCommission(maxMeetings);
 
-          let maxMeetings = 0;
-                  for (const d of febDeals) {
-                              if (val(d, "owner") === process.env.ATTIO_MAX_UUID) maxMeetings++;
-                  }
+    const bdrResult = {
+      id: "max",
+      name: BDR_DATA.name,
+      role: BDR_DATA.role,
+      initials: BDR_DATA.initials,
+      color: BDR_DATA.color,
+      type: "bdr" as const,
+      monthlyQuota: BDR_DATA.monthlyQuota,
+      totalMeetings: maxMeetings,
+      netMeetings: maxMeetings,
+      attainment: bdrAttainment,
+      commission: bdrCommission,
+    };
 
-          const { commission: bdrComm, attainment: bdrAtt } = calcBDRCommission(maxMeetings);
+    // ─── Sanity check ─────────────────────────────────────────────────────
+    const today = new Date().getUTCDate();
+    const warning =
+      deals.length === 0 && today > 5
+        ? "No deals found for this month — check Attio attribute slugs"
+        : undefined;
 
-          // Include debug info about all deal stages found
-          const allStages = (deals || []).map((d: any) => val(d, "stage")).filter(Boolean);
-                  const uniqueStages = [...new Set(allStages)];
-
-          return NextResponse.json({
-                      ae,
-                      bdr: { id: "max", name: "Max Zajec", totalMeetings: maxMeetings, netMeetings: maxMeetings, attainment: bdrAtt, commission: bdrComm },
-                      meta: { fetchedAt: new Date().toISOString(), dealCount: (febDeals || []).length, totalDeals: (deals || []).length, stagesFound: uniqueStages },
-          }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } });
-        } catch (err: any) {
-                  console.error("Commission API error:", err);
-                  return NextResponse.json({ error: err.message }, { status: 500 });
-        }
+    return NextResponse.json(
+      {
+        ae: aeResults,
+        bdr: bdrResult,
+        meta: {
+          fetchedAt: new Date().toISOString(),
+          dealCount: deals.length,
+          monthLabel,
+          warning,
+        },
+        mode: "live",
+      },
+      {
+        headers: {
+          "Cache-Control": "private, s-maxage=60, stale-while-revalidate=60",
+        },
+      }
+    );
+  } catch (err: any) {
+    console.error("Commission API error:", err);
+    // FIX: Generic error message — don't leak Attio internals
+    return NextResponse.json(
+      { error: "Failed to fetch commission data. Check server logs." },
+      { status: 500 }
+    );
+  }
 }
