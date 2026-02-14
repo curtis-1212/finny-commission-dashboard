@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 
-// ─── Types (only what the API returns — no salary/OTE/rates) ────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
@@ -9,7 +9,6 @@ interface AEResult {
   dealCount?: number; excludedCount?: number;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
-  tierLabels?: string[];
 }
 interface BDRResult {
   id: string; name: string; role: string; initials: string; color: string; type: "bdr";
@@ -18,326 +17,627 @@ interface BDRResult {
   attainment?: number; commission?: number;
 }
 type RepResult = AEResult | BDRResult;
+interface MonthOption { value: string; label: string }
 
-interface ManualAE { grossDeals: number; churnARR: number; nonConverting: number; dealCount: number; excludedCount: number }
-interface ManualBDR { totalMeetings: number; disqualified: number; existingCustomers: number; dealsCreated: number }
+// ─── Brand: Institutional Exec ──────────────────────────────────────────────
+const C = {
+  bg: "#080E1C",
+  surface: "#0C1324",
+  card: "#101829",
+  cardHover: "#141D30",
+  border: "rgba(255,255,255,0.05)",
+  borderMed: "rgba(255,255,255,0.08)",
+  primary: "#6366F1",
+  primaryMuted: "#4F46E5",
+  accent: "#10B981",
+  accentMuted: "#059669",
+  warn: "#F59E0B",
+  warnMuted: "#D97706",
+  danger: "#EF4444",
+  dangerMuted: "#DC2626",
+  text: "#E2E8F0",
+  textSec: "#94A3B8",
+  textDim: "#64748B",
+  textGhost: "#475569",
+};
+const F = {
+  d: "'Instrument Sans', 'DM Sans', system-ui, sans-serif",
+  b: "'DM Sans', system-ui, sans-serif",
+  m: "'JetBrains Mono', 'SF Mono', monospace",
+};
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+const fmtK = (n: number) => {
+  if (Math.abs(n) >= 1000000) return "$" + (n / 1000000).toFixed(1) + "M";
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n / 1000) + "k";
+  return "$" + Math.round(n);
+};
 const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
-const SANS = "'DM Sans', system-ui, sans-serif";
-const MONO = "'JetBrains Mono', monospace";
+const fmtPct0 = (n: number) => (n * 100).toFixed(0) + "%";
 
-// ─── ProgressRing ───────────────────────────────────────────────────────────
-function ProgressRing({ pct, color, size = 88 }: { pct: number; color: string; size?: number }) {
-  const stroke = 5, r = (size - stroke * 2) / 2, circ = 2 * Math.PI * r;
-  const offset = circ - Math.min(pct, 1.5) * circ;
-  return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1)" }} />
-    </svg>
-  );
+function getCurrentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// ─── InputField ─────────────────────────────────────────────────────────────
-function InputField({ label, value, onChange, prefix = "$", small = false }: {
-  label: string; value: number; onChange: (v: number) => void; prefix?: string; small?: boolean;
-}) {
-  return (
-    <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 4, fontFamily: SANS }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "6px 10px" }}>
-        <span style={{ color: "#475569", fontSize: small ? 12 : 13, fontFamily: MONO, marginRight: 4 }}>{prefix}</span>
-        <input type="number" value={value || ""} onChange={(e) => onChange(Number(e.target.value) || 0)}
-          style={{ flex: 1, background: "none", border: "none", outline: "none", color: "#CBD5E1", fontSize: small ? 13 : 14, fontFamily: MONO, width: "100%" }} />
-      </div>
-    </div>
-  );
+// ─── Attainment color logic ─────────────────────────────────────────────────
+function attColor(att: number): string {
+  if (att >= 1.2) return C.accent;
+  if (att >= 1.0) return C.accent;
+  if (att >= 0.8) return C.text;
+  if (att >= 0.6) return C.warn;
+  return C.danger;
+}
+function attBg(att: number): string {
+  if (att >= 1.2) return `${C.accent}15`;
+  if (att >= 1.0) return `${C.accent}10`;
+  if (att >= 0.8) return "transparent";
+  if (att >= 0.6) return `${C.warn}10`;
+  return `${C.danger}10`;
 }
 
-// ─── AECard ─────────────────────────────────────────────────────────────────
-function AECard({ rep, manual, setManual, isLive }: {
-  rep: AEResult; manual: ManualAE; setManual: (v: ManualAE) => void; isLive: boolean;
+// ═══════════════════════════════════════════════════════════════════════════════
+// KPI TILE
+// ═══════════════════════════════════════════════════════════════════════════════
+function KPI({ label, value, sub, accent, large }: {
+  label: string; value: string; sub?: string; accent?: boolean; large?: boolean;
 }) {
-  // In manual mode, compute from inputs; in live mode, use API data
-  const netARR = isLive ? (rep.netARR || 0) : manual.grossDeals - manual.churnARR - manual.nonConverting;
-  const attainment = rep.monthlyQuota > 0 ? netARR / rep.monthlyQuota : 0;
-  const commission = isLive ? (rep.commission || 0) : netARR * 0.09; // Simplified for manual
-  const actualAttainment = isLive ? (rep.attainment || 0) : attainment;
-
   return (
-    <div style={{ background: "linear-gradient(135deg, rgba(15,23,42,0.95), rgba(15,23,42,0.8))", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 28, display: "flex", flexDirection: "column" as const, gap: 24, position: "relative" as const, overflow: "hidden" }}>
-      <div style={{ position: "absolute" as const, top: -40, right: -40, width: 120, height: 120, borderRadius: "50%", background: rep.color, opacity: 0.05, filter: "blur(40px)" }} />
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: `${rep.color}22`, border: `1px solid ${rep.color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: rep.color, fontFamily: SANS }}>{rep.initials}</div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: "#E2E8F0", fontFamily: SANS }}>{rep.name}</div>
-            <div style={{ fontSize: 12, color: "#64748B", fontFamily: SANS }}>{rep.role}</div>
-          </div>
-        </div>
-        <div style={{ textAlign: "center" as const, position: "relative" as const }}>
-          <ProgressRing pct={actualAttainment} color={rep.color} />
-          <div style={{ position: "absolute" as const, top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 16, fontWeight: 700, fontFamily: MONO, color: "#E2E8F0" }}>
-            {fmtPct(actualAttainment)}
-          </div>
-        </div>
-      </div>
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.04)" }}>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Net ARR</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{fmt(netARR)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Monthly Quota</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{fmt(rep.monthlyQuota)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Commission</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#10B981", fontFamily: MONO }}>{fmt(isLive ? (rep.commission || 0) : commission)}</div>
-        </div>
-      </div>
-      {/* Deal count */}
-      {isLive && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.04)" }}>
-          <div>
-            <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Deals</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{rep.dealCount || 0}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Gross ARR</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{fmt(rep.grossARR || 0)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Churn</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#EF4444", fontFamily: MONO }}>-{fmt(rep.churnARR || 0)}</div>
-          </div>
-        </div>
-      )}
-      {/* Manual inputs (only in manual mode) */}
-      {!isLive && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <InputField label="Gross Closed Won" value={manual.grossDeals} onChange={(v) => setManual({ ...manual, grossDeals: v })} />
-          <InputField label="Churn ARR" value={manual.churnARR} onChange={(v) => setManual({ ...manual, churnARR: v })} />
-          <InputField label="Non-Converting" value={manual.nonConverting} onChange={(v) => setManual({ ...manual, nonConverting: v })} />
-          <InputField label="Deal Count" value={manual.dealCount} onChange={(v) => setManual({ ...manual, dealCount: v })} prefix="#" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── BDRCard ────────────────────────────────────────────────────────────────
-function BDRCard({ rep, manual, setManual, isLive }: {
-  rep: BDRResult; manual: ManualBDR; setManual: (v: ManualBDR) => void; isLive: boolean;
-}) {
-  const meetings = isLive ? (rep.netMeetings || 0) : Math.max(0, manual.totalMeetings - manual.disqualified - manual.existingCustomers);
-  const attainment = isLive ? (rep.attainment || 0) : (rep.monthlyQuota > 0 ? meetings / rep.monthlyQuota : 0);
-  const commission = isLive ? (rep.commission || 0) : meetings * 33;
-
-  return (
-    <div style={{ background: "linear-gradient(135deg, rgba(15,23,42,0.95), rgba(15,23,42,0.8))", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 28, display: "flex", flexDirection: "column" as const, gap: 24, position: "relative" as const, overflow: "hidden" }}>
-      <div style={{ position: "absolute" as const, top: -40, right: -40, width: 120, height: 120, borderRadius: "50%", background: rep.color, opacity: 0.05, filter: "blur(40px)" }} />
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: `${rep.color}22`, border: `1px solid ${rep.color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: rep.color, fontFamily: SANS }}>{rep.initials}</div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: "#E2E8F0", fontFamily: SANS }}>{rep.name}</div>
-            <div style={{ fontSize: 12, color: "#64748B", fontFamily: SANS }}>{rep.role}</div>
-          </div>
-        </div>
-        <div style={{ textAlign: "center" as const, position: "relative" as const }}>
-          <ProgressRing pct={attainment} color={rep.color} />
-          <div style={{ position: "absolute" as const, top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 16, fontWeight: 700, fontFamily: MONO, color: "#E2E8F0" }}>
-            {fmtPct(attainment)}
-          </div>
-        </div>
-      </div>
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.04)" }}>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Meetings</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{meetings}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Target</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#CBD5E1", fontFamily: MONO }}>{rep.monthlyQuota}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Commission</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#10B981", fontFamily: MONO }}>{fmt(commission)}</div>
-        </div>
-      </div>
-      {/* Manual inputs */}
-      {!isLive && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <InputField label="Total Meetings" value={manual.totalMeetings} onChange={(v) => setManual({ ...manual, totalMeetings: v })} prefix="#" />
-          <InputField label="Disqualified" value={manual.disqualified} onChange={(v) => setManual({ ...manual, disqualified: v })} prefix="#" />
-          <InputField label="Existing Customers" value={manual.existingCustomers} onChange={(v) => setManual({ ...manual, existingCustomers: v })} prefix="#" />
-          <InputField label="Deals Created" value={manual.dealsCreated} onChange={(v) => setManual({ ...manual, dealsCreated: v })} prefix="#" />
-        </div>
+    <div style={{
+      padding: large ? "20px 0" : "16px 0",
+      borderRight: `1px solid ${C.border}`,
+      flex: 1,
+      minWidth: 0,
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 500, color: C.textDim,
+        fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+        marginBottom: large ? 8 : 6,
+      }}>{label}</div>
+      <div style={{
+        fontSize: large ? 28 : 20, fontWeight: 700,
+        fontFamily: F.m, letterSpacing: "-0.03em",
+        color: accent ? C.accent : C.text,
+        lineHeight: 1,
+      }}>{value}</div>
+      {sub && (
+        <div style={{
+          fontSize: 11, color: C.textDim, fontFamily: F.b,
+          marginTop: 4,
+        }}>{sub}</div>
       )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// EXEC DASHBOARD
+// PLAN VS ACTUAL BAR
+// ═══════════════════════════════════════════════════════════════════════════════
+function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type }: {
+  name: string; initials: string; actual: number; quota: number;
+  att: number; commission: number; churn: number; deals: number; type: string;
+}) {
+  const pct = Math.min(att, 1.5);
+  const barColor = att >= 1.0
+    ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
+    : att >= 0.8
+      ? `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`
+      : att >= 0.6
+        ? `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})`
+        : `linear-gradient(90deg, ${C.danger}, ${C.dangerMuted})`;
+
+  const isBDR = type === "bdr";
+
+  return (
+    <div style={{
+      padding: "16px 20px",
+      borderBottom: `1px solid ${C.border}`,
+      transition: "background 0.15s",
+    }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = C.cardHover)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {/* Row 1: Name + metrics */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        {/* Initials badge */}
+        <div style={{
+          width: 32, height: 32, borderRadius: 8,
+          background: `${C.primary}15`, border: `1px solid ${C.primary}25`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, fontWeight: 700, color: C.primary, fontFamily: F.b,
+          flexShrink: 0,
+        }}>{initials}</div>
+
+        {/* Name */}
+        <div style={{ flex: "0 0 120px", minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: F.d, letterSpacing: "-0.01em", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+        </div>
+
+        {/* Metrics row */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 0 }}>
+          {/* Net ARR / Meetings */}
+          <div style={{ flex: 1, textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Mtgs" : "Net ARR"}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>
+              {isBDR ? actual : fmtK(actual)}
+            </div>
+          </div>
+
+          {/* Attainment */}
+          <div style={{ flex: 1, textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Attain.</div>
+            <div style={{
+              fontSize: 15, fontWeight: 700, fontFamily: F.m,
+              color: attColor(att), letterSpacing: "-0.02em",
+            }}>
+              {fmtPct0(att)}
+            </div>
+          </div>
+
+          {/* Deals */}
+          <div style={{ flex: 0.7, textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Target" : "Deals"}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
+          </div>
+
+          {/* Churn */}
+          {!isBDR && (
+            <div style={{ flex: 0.8, textAlign: "right" as const }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Churn</div>
+              <div style={{
+                fontSize: 15, fontWeight: 600, fontFamily: F.m,
+                color: churn > 0 ? C.danger : C.textGhost,
+              }}>
+                {churn > 0 ? `-${fmtK(churn)}` : "—"}
+              </div>
+            </div>
+          )}
+
+          {/* Commission */}
+          <div style={{ flex: 1, textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Comm.</div>
+            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.accent, letterSpacing: "-0.02em" }}>
+              {fmtK(commission)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Plan vs Actual bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44 }}>
+        <div style={{
+          flex: 1, height: 6, background: "rgba(255,255,255,0.04)",
+          borderRadius: 100, position: "relative", overflow: "visible",
+        }}>
+          {/* Quota marker */}
+          <div style={{
+            position: "absolute",
+            left: `${Math.min(100 / Math.max(pct, 1), 100)}%`,
+            top: -2, width: 1, height: 10,
+            background: "rgba(255,255,255,0.2)",
+            zIndex: 2,
+          }} />
+          {/* Fill */}
+          <div style={{
+            height: "100%", borderRadius: 100,
+            width: `${Math.min(pct * 100 / Math.max(pct, 1), 100)}%`,
+            background: barColor,
+            transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
+            minWidth: att > 0 ? 6 : 0,
+          }} />
+        </div>
+        {/* Quota label */}
+        <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
+          {isBDR ? `${quota} mtgs` : fmtK(quota)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXEC DASHBOARD — REVENUE COMMAND CENTER
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ExecDashboard() {
-  const [isLive, setIsLive] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [fetchedAt, setFetchedAt] = useState<string>("");
-  const [monthLabel, setMonthLabel] = useState<string>("");
-  const [warning, setWarning] = useState<string>("");
-  const [activeTab, setActiveTab] = useState("jason");
+  const [error, setError] = useState("");
+  const [fetchedAt, setFetchedAt] = useState("");
+  const [monthLabel, setMonthLabel] = useState("");
+  const [warning, setWarning] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue());
+  const [availableMonths, setAvailableMonths] = useState<MonthOption[]>([]);
+  const [isLive, setIsLive] = useState(false);
 
-  // Rep data from API
-  const [reps, setReps] = useState<RepResult[]>([
-    { id: "jason", name: "Jason Vigilante", role: "Founding Account Executive", initials: "JV", color: "#3B82F6", type: "ae", monthlyQuota: 166666.67, annualQuota: 2000000 },
-    { id: "kelcy", name: "Kelcy Koenig", role: "Founding Account Executive", initials: "KK", color: "#F59E0B", type: "ae", monthlyQuota: 150000, annualQuota: 1800000 },
-    { id: "max", name: "Max Zajec", role: "Founding BDR", initials: "MZ", color: "#8B5CF6", type: "bdr", monthlyQuota: 15 },
-  ]);
+  const [aeResults, setAeResults] = useState<AEResult[]>([]);
+  const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
 
-  // Manual mode inputs
-  const [manualAE, setManualAE] = useState<Record<string, ManualAE>>({
-    jason: { grossDeals: 0, churnARR: 0, nonConverting: 0, dealCount: 0, excludedCount: 0 },
-    kelcy: { grossDeals: 0, churnARR: 0, nonConverting: 0, dealCount: 0, excludedCount: 0 },
-  });
-  const [manualBDR, setManualBDR] = useState<ManualBDR>({ totalMeetings: 0, disqualified: 0, existingCustomers: 0, dealsCreated: 0 });
-
-  // Get token from URL
   const [token, setToken] = useState("");
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setToken(params.get("token") || "");
-  }, []);
+  useEffect(() => { setToken(new URLSearchParams(window.location.search).get("token") || ""); }, []);
 
-  // Fetch live data
   const fetchLive = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/commissions?live=true&token=${token}`);
+      const res = await fetch(`/api/commissions?live=true&month=${selectedMonth}&token=${token}`);
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
-      const allReps: RepResult[] = [...(data.ae || []), ...(data.bdr ? [data.bdr] : [])];
-      setReps(allReps);
+      setAeResults(data.ae || []);
+      setBdrResult(data.bdr || null);
       setFetchedAt(data.meta?.fetchedAt || "");
       setMonthLabel(data.meta?.monthLabel || "");
       setWarning(data.meta?.warning || "");
-    } catch (e: any) {
-      setError(e.message);
-      setIsLive(false);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+      if (data.availableMonths) setAvailableMonths(data.availableMonths);
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  }, [token, selectedMonth]);
 
-  useEffect(() => {
-    if (isLive) fetchLive();
-  }, [isLive, fetchLive]);
+  useEffect(() => { if (isLive) fetchLive(); }, [isLive, fetchLive]);
+  useEffect(() => { if (!isLive) return; const i = setInterval(fetchLive, 60000); return () => clearInterval(i); }, [isLive, fetchLive]);
 
-  // Auto-refresh every 60s when live
-  useEffect(() => {
-    if (!isLive) return;
-    const interval = setInterval(fetchLive, 60000);
-    return () => clearInterval(interval);
-  }, [isLive, fetchLive]);
+  // ─── Computed KPIs ──────────────────────────────────────────────────────
+  const totalNetARR = aeResults.reduce((s, r) => s + (r.netARR || 0), 0);
+  const totalGrossARR = aeResults.reduce((s, r) => s + (r.grossARR || 0), 0);
+  const totalChurnARR = aeResults.reduce((s, r) => s + (r.churnARR || 0), 0);
+  const totalQuota = aeResults.reduce((s, r) => s + r.monthlyQuota, 0);
+  const totalDeals = aeResults.reduce((s, r) => s + (r.dealCount || 0), 0);
+  const teamAttainment = totalQuota > 0 ? totalNetARR / totalQuota : 0;
+  const totalComm = aeResults.reduce((s, r) => s + (r.commission || 0), 0) + (bdrResult?.commission || 0);
+  const churnRate = totalGrossARR > 0 ? totalChurnARR / totalGrossARR : 0;
+  const commAsPercent = totalNetARR > 0 ? totalComm / totalNetARR : 0;
 
-  const current = reps.find((r) => r.id === activeTab) || reps[0];
-
-  // Totals
-  const totalNetARR = reps.filter((r): r is AEResult => r.type === "ae").reduce((sum, r) => {
-    if (isLive) return sum + (r.netARR || 0);
-    const m = manualAE[r.id];
-    return sum + (m ? m.grossDeals - m.churnARR - m.nonConverting : 0);
-  }, 0);
-  const totalComm = reps.reduce((sum, r) => {
-    if (isLive) return sum + ((r as any).commission || 0);
-    if (r.type === "bdr") return sum + Math.max(0, manualBDR.totalMeetings - manualBDR.disqualified - manualBDR.existingCustomers) * 33;
-    const m = manualAE[r.id];
-    return sum + (m ? (m.grossDeals - m.churnARR - m.nonConverting) * 0.09 : 0);
-  }, 0);
+  // Sort AEs by attainment descending
+  const sortedAEs = [...aeResults].sort((a, b) => (b.attainment || 0) - (a.attainment || 0));
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0B1120", color: "#E2E8F0", fontFamily: SANS }}>
-      {/* Header */}
-      <div style={{ padding: "20px 32px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 720, margin: "0 auto" }}>
-          <div>
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: F.b }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');`}</style>
+
+      {/* ─── HEADER ──────────────────────────────────────────────────── */}
+      <div style={{
+        borderBottom: `1px solid ${C.border}`,
+        padding: "0 32px",
+      }}>
+        <div style={{ maxWidth: 960, margin: "0 auto" }}>
+          {/* Top row */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "18px 0 14px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <img src="/logo.png" alt="FINNY" style={{ width: 28, height: 28, borderRadius: 6 }} />
+              <div>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: C.textDim,
+                  fontFamily: F.b, letterSpacing: "0.1em", textTransform: "uppercase" as const,
+                }}>Revenue Command Center</div>
+                <div style={{
+                  fontSize: 16, fontWeight: 700, color: C.text,
+                  fontFamily: F.d, letterSpacing: "-0.02em", marginTop: 1,
+                }}>
+                  {monthLabel || "Performance Overview"}
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "#10B981", background: "rgba(16,185,129,0.1)", padding: "3px 8px", borderRadius: 4, border: "1px solid rgba(16,185,129,0.2)", fontFamily: SANS }}>
-                {isLive ? "LIVE" : "MANUAL"}
-              </span>
-              <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", margin: 0, fontFamily: SANS }}>Commission Dashboard</h1>
-            </div>
-            <div style={{ fontSize: 13, color: "#64748B", marginTop: 4, fontFamily: SANS }}>
-              {monthLabel || "Exec View"} {fetchedAt && isLive ? ` · Updated ${new Date(fetchedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })} ET` : ""}
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-            <div style={{ textAlign: "right" as const }}>
-              <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Team Net ARR</div>
-              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: MONO }}>{fmt(totalNetARR)}</div>
-            </div>
-            <div style={{ textAlign: "right" as const }}>
-              <div style={{ fontSize: 10, color: "#64748B", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontFamily: SANS }}>Total Comm.</div>
-              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: MONO, color: "#10B981" }}>{fmt(totalComm)}</div>
-            </div>
-            <button onClick={() => setIsLive(!isLive)} style={{
-              padding: "8px 16px", borderRadius: 8, border: isLive ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(255,255,255,0.1)",
-              background: isLive ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)", color: isLive ? "#10B981" : "#64748B",
-              cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: SANS, transition: "all 0.2s",
-            }}>
-              {loading ? "Loading…" : isLive ? "● LIVE" : "○ LIVE"}
-            </button>
-          </div>
-        </div>
+              {isLive && availableMonths.length > 0 && (
+                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6,
+                    border: `1px solid ${C.borderMed}`, background: C.card,
+                    color: C.textSec, fontSize: 11, fontFamily: F.b, fontWeight: 500,
+                    cursor: "pointer", outline: "none",
+                  }}>
+                  {availableMonths.map((m) => <option key={m.value} value={m.value} style={{ background: C.card, color: C.text }}>{m.label}</option>)}
+                </select>
+              )}
 
-        {/* Warning */}
-        {warning && (
-          <div style={{ maxWidth: 720, margin: "12px auto 0", padding: "10px 14px", borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#F59E0B", fontSize: 12, fontFamily: SANS }}>
-            ⚠️ {warning}
-          </div>
-        )}
-        {error && (
-          <div style={{ maxWidth: 720, margin: "12px auto 0", padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 12, fontFamily: SANS }}>
-            Error: {error}
-          </div>
-        )}
+              {fetchedAt && isLive && (
+                <div style={{ fontSize: 11, color: C.textGhost, fontFamily: F.b }}>
+                  {new Date(fetchedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })} ET
+                </div>
+              )}
 
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, maxWidth: 720, margin: "16px auto 0", flexWrap: "wrap" as const }}>
-          {reps.map((rep) => (
-            <button key={rep.id} onClick={() => setActiveTab(rep.id)} style={{
-              padding: "8px 18px", border: "none", borderRadius: "8px 8px 0 0", cursor: "pointer", fontSize: 13, fontWeight: activeTab === rep.id ? 600 : 500,
-              fontFamily: SANS, background: activeTab === rep.id ? "rgba(255,255,255,0.06)" : "transparent", color: activeTab === rep.id ? rep.color : "#64748B",
-              borderBottom: activeTab === rep.id ? `2px solid ${rep.color}` : "2px solid transparent", transition: "all 0.2s",
-            }}>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: rep.color, marginRight: 8, opacity: activeTab === rep.id ? 1 : 0.3 }} />
-              {rep.name.split(" ")[0]}
-            </button>
-          ))}
+              <button onClick={() => setIsLive(!isLive)} style={{
+                padding: "6px 14px", borderRadius: 6,
+                border: isLive ? `1px solid ${C.accent}40` : `1px solid ${C.borderMed}`,
+                background: isLive ? `${C.accent}12` : C.card,
+                color: isLive ? C.accent : C.textDim,
+                cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: F.b,
+                transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <span style={{
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: isLive ? C.accent : C.textGhost,
+                  display: "inline-block",
+                }} />
+                {loading ? "Loading…" : isLive ? "LIVE" : "CONNECT"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Active Card */}
-      <div style={{ padding: "24px 32px", maxWidth: 720, margin: "0 auto" }}>
-        {current.type === "ae" ? (
-          <AECard rep={current as AEResult} manual={manualAE[current.id] || { grossDeals: 0, churnARR: 0, nonConverting: 0, dealCount: 0, excludedCount: 0 }}
-            setManual={(v) => setManualAE({ ...manualAE, [current.id]: v })} isLive={isLive} />
-        ) : (
-          <BDRCard rep={current as BDRResult} manual={manualBDR} setManual={setManualBDR} isLive={isLive} />
+      {/* Warnings */}
+      {(warning || error) && (
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 32px" }}>
+          {warning && <div style={{ padding: "10px 14px", marginTop: 12, borderRadius: 6, background: `${C.warn}10`, border: `1px solid ${C.warn}20`, color: C.warn, fontSize: 12, fontFamily: F.b }}>⚠ {warning}</div>}
+          {error && <div style={{ padding: "10px 14px", marginTop: 12, borderRadius: 6, background: `${C.danger}10`, border: `1px solid ${C.danger}20`, color: C.danger, fontSize: 12, fontFamily: F.b }}>Error: {error}</div>}
+        </div>
+      )}
+
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 32px" }}>
+
+        {/* ─── KPI COCKPIT ──────────────────────────────────────────── */}
+        {isLive && aeResults.length > 0 && (
+          <div style={{
+            display: "flex", gap: 0,
+            padding: "0 20px",
+            marginTop: 20,
+            background: C.card,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
+          }}>
+            <KPI label="Net New ARR" value={fmt(totalNetARR)} large />
+            <div style={{ padding: "0 20px" }}>
+              <KPI label="% to Plan" value={fmtPct0(teamAttainment)}
+                sub={teamAttainment >= 1 ? "On track" : `${fmtK(Math.max(0, totalQuota - totalNetARR))} remaining`}
+                accent={teamAttainment >= 1} large />
+            </div>
+            <div style={{ padding: "0 20px" }}>
+              <KPI label="Total Commission" value={fmt(totalComm)} accent large />
+            </div>
+            <div style={{ padding: "0 20px" }}>
+              <KPI label="Gross Churn" value={fmtPct(churnRate)}
+                sub={totalChurnARR > 0 ? fmtK(totalChurnARR) : "Clean"} large />
+            </div>
+            <div style={{ padding: "0 20px", borderRight: "none" }}>
+              <KPI label="Deals Closed" value={String(totalDeals)} large />
+            </div>
+          </div>
         )}
+
+        {/* ─── "Connect to see data" state ──────────────────────────── */}
+        {!isLive && (
+          <div style={{
+            display: "flex", flexDirection: "column" as const, alignItems: "center",
+            justifyContent: "center", padding: "80px 0",
+            gap: 16,
+          }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: `${C.primary}10`, border: `1px solid ${C.primary}20`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20,
+            }}>📡</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.text, fontFamily: F.d }}>
+              Connect to Attio
+            </div>
+            <div style={{ fontSize: 13, color: C.textDim, fontFamily: F.b, textAlign: "center", maxWidth: 280, lineHeight: 1.5 }}>
+              Click CONNECT above to pull live commission data from your CRM.
+            </div>
+          </div>
+        )}
+
+        {/* ─── LEVERAGE INDICATORS ──────────────────────────────────── */}
+        {isLive && aeResults.length > 0 && (
+          <div style={{
+            display: "flex", gap: 10, marginTop: 12,
+          }}>
+            {[
+              {
+                label: "Revenue / AE",
+                value: fmtK(aeResults.length > 0 ? totalNetARR / aeResults.length : 0),
+                desc: "avg net ARR per rep",
+              },
+              {
+                label: "Comm. as % ARR",
+                value: fmtPct(commAsPercent),
+                desc: "blended commission rate",
+              },
+              {
+                label: "Accelerator Exposure",
+                value: aeResults.filter(r => (r.attainment || 0) >= 1.0).length + " / " + aeResults.length,
+                desc: "reps in accelerator tiers",
+              },
+            ].map((item, i) => (
+              <div key={i} style={{
+                flex: 1, padding: "14px 16px",
+                background: C.card, borderRadius: 10,
+                border: `1px solid ${C.border}`,
+              }}>
+                <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 6 }}>{item.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>{item.value}</div>
+                <div style={{ fontSize: 11, color: C.textGhost, fontFamily: F.b, marginTop: 2 }}>{item.desc}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ─── TEAM PLAN VS ACTUAL ──────────────────────────────────── */}
+        {isLive && aeResults.length > 0 && (
+          <div style={{
+            marginTop: 12,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
+            overflow: "hidden",
+            background: C.card,
+          }}>
+            {/* Header row */}
+            <div style={{
+              display: "flex", alignItems: "center",
+              padding: "14px 20px",
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: C.textDim,
+                fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+              }}>
+                Rep Performance
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+                Ranked by attainment
+              </div>
+            </div>
+
+            {/* AE rows */}
+            {sortedAEs.map((ae) => (
+              <PlanBar
+                key={ae.id}
+                name={ae.name}
+                initials={ae.initials}
+                actual={ae.netARR || 0}
+                quota={ae.monthlyQuota}
+                att={ae.attainment || 0}
+                commission={ae.commission || 0}
+                churn={ae.churnARR || 0}
+                deals={ae.dealCount || 0}
+                type="ae"
+              />
+            ))}
+
+            {/* BDR row */}
+            {bdrResult && (
+              <PlanBar
+                name={bdrResult.name}
+                initials={bdrResult.initials}
+                actual={bdrResult.netMeetings || 0}
+                quota={bdrResult.monthlyQuota}
+                att={bdrResult.attainment || 0}
+                commission={bdrResult.commission || 0}
+                churn={0}
+                deals={0}
+                type="bdr"
+              />
+            )}
+
+            {/* Team total row */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "14px 20px",
+              background: "rgba(255,255,255,0.02)",
+              borderTop: `1px solid ${C.borderMed}`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: "rgba(255,255,255,0.04)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 700, color: C.textDim, fontFamily: F.b,
+                }}>Σ</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: F.d }}>Team Total</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+                <div style={{ textAlign: "right" as const }}>
+                  <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Net ARR</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: C.text }}>{fmt(totalNetARR)}</div>
+                </div>
+                <div style={{ textAlign: "right" as const }}>
+                  <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>% to Plan</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: attColor(teamAttainment) }}>{fmtPct0(teamAttainment)}</div>
+                </div>
+                <div style={{ textAlign: "right" as const }}>
+                  <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Commission</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: C.accent }}>{fmt(totalComm)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── PLAN VS ACTUAL VISUAL ────────────────────────────────── */}
+        {isLive && aeResults.length > 0 && (
+          <div style={{
+            marginTop: 12,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+            padding: "18px 20px",
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, color: C.textDim,
+              fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+              marginBottom: 16,
+            }}>
+              Plan vs Actual — Team
+            </div>
+
+            {/* Quota bar */}
+            <div style={{ position: "relative", height: 40, background: "rgba(255,255,255,0.03)", borderRadius: 8, overflow: "hidden" }}>
+              {/* Quota fill (background) */}
+              <div style={{
+                position: "absolute", top: 0, left: 0, height: "100%",
+                width: "100%",
+                background: `repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 20%)`,
+                borderRadius: 8,
+              }} />
+              {/* Actual fill */}
+              <div style={{
+                position: "absolute", top: 0, left: 0, height: "100%",
+                width: `${Math.min(teamAttainment * 100, 150) / 1.5}%`,
+                background: teamAttainment >= 1.0
+                  ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
+                  : `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`,
+                borderRadius: 8,
+                transition: "width 1s cubic-bezier(0.4,0,0.2,1)",
+                display: "flex", alignItems: "center", justifyContent: "flex-end",
+                paddingRight: 12,
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: F.m, color: "#fff" }}>
+                  {fmt(totalNetARR)}
+                </span>
+              </div>
+              {/* Quota marker line */}
+              <div style={{
+                position: "absolute",
+                left: `${100 / 1.5}%`,
+                top: 0, width: 2, height: "100%",
+                background: "rgba(255,255,255,0.25)",
+                zIndex: 2,
+              }} />
+              {/* Quota label */}
+              <div style={{
+                position: "absolute",
+                left: `${100 / 1.5}%`,
+                top: -2,
+                transform: "translateX(-100%)",
+                fontSize: 10, color: C.textDim, fontFamily: F.m,
+                paddingRight: 6,
+                lineHeight: "40px",
+              }}>
+                {fmt(totalQuota)} quota
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 10, height: 3, borderRadius: 2, background: C.primary }} />
+                <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Actual</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)" }} />
+                <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Quota</span>
+              </div>
+              {totalChurnARR > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 10, height: 3, borderRadius: 2, background: C.danger }} />
+                  <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Churn: {fmtK(totalChurnARR)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* ─── Footer ────────────────────────────────────────────────── */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: 8, padding: "40px 0 48px",
+      }}>
+        <img src="/logo.png" alt="" style={{ width: 12, height: 12, borderRadius: 2, opacity: 0.15 }} />
+        <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Powered by FINNY</span>
       </div>
     </div>
   );

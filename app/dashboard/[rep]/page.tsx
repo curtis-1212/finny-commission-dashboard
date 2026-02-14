@@ -6,27 +6,53 @@ import { useParams, useSearchParams } from "next/navigation";
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
 interface StageCount { count: number; arr: number }
 interface AEMetrics {
-  netARR: number; monthlyQuota: number; attainment: number;
+  grossARR: number; churnARR: number; netARR: number;
+  monthlyQuota: number; attainment: number; commission: number;
+  tierBreakdown?: { label: string; amount: number }[];
   introCallsScheduled: number;
   toBeOnboarded: StageCount; closedWon: StageCount;
   closedLost: StageCount; churned: StageCount;
 }
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
-  introCallsScheduled: number;
+  commission: number; introCallsScheduled: number;
 }
+interface MonthOption { value: string; label: string }
 
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtPct = (n: number) => (n * 100).toFixed(0) + "%";
 
+function getCurrentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// ─── FINNY Brand ────────────────────────────────────────────────────────────
+const B = {
+  primary: "#6366F1",
+  primaryLight: "#818CF8",
+  primaryFaint: "#EEF2FF",
+  accent: "#10B981",
+  danger: "#EF4444",
+  bg: "#FAFBFD",
+  card: "#FFFFFF",
+  text: "#1E293B",
+  muted: "#64748B",
+  faint: "#94A3B8",
+  border: "#E2E8F0",
+  borderLight: "#F1F5F9",
+};
+
 // ─── Encouragement ──────────────────────────────────────────────────────────
-function getMessage(att: number, daysLeft: number): { headline: string; sub: string; emoji: string } {
-  if (att >= 1.2) return { headline: "You're on fire", sub: `Accelerators unlocked. ${daysLeft} days left to widen the gap.`, emoji: "🔥" };
-  if (att >= 1.0) return { headline: "Quota crushed", sub: "Everything from here is upside. Keep the momentum going.", emoji: "⚡" };
-  if (att >= 0.8) return { headline: "Almost there", sub: `${fmtPct(1 - att)} to go — you've got ${daysLeft} days to close the gap.`, emoji: "🎯" };
-  if (att >= 0.5) return { headline: "Solid progress", sub: `Halfway mark cleared. ${daysLeft} days to make it count.`, emoji: "📈" };
-  if (att > 0) return { headline: "Building momentum", sub: `Every deal gets you closer. ${daysLeft} days left this month.`, emoji: "💪" };
-  return { headline: "Let's get after it", sub: `Fresh month, clean slate. ${daysLeft} days to make your mark.`, emoji: "🚀" };
+function getMsg(att: number, left: number, isAE: boolean) {
+  if (att >= 1.5) return { h: "Absolutely crushing it.", s: `Deep in accelerator territory. ${left} days to keep building your best month yet.`, e: "🏆" };
+  if (att >= 1.2) return { h: "Accelerators unlocked.", s: `Top tier, every deal from here is outsized upside. ${left} days left.`, e: "🔥" };
+  if (att >= 1.0) return { h: "Quota: crushed.", s: "You've hit target. Everything from here is pure upside — keep pushing.", e: "⚡" };
+  if (att >= 0.85) return { h: "The finish line is right there.", s: `${fmtPct(1 - att)} to go — you've done the hardest part. ${left} days to close it out.`, e: "🎯" };
+  if (att >= 0.6) return { h: "Strong momentum.", s: `Well past halfway and building. ${left} days to close the gap.`, e: "📈" };
+  if (att >= 0.3) return { h: "Building nicely.", s: `Pipeline is moving. ${left} days left — every conversation is an opportunity.`, e: "💪" };
+  if (att > 0) return { h: "Off and running.", s: `First ${isAE ? "deals" : "meetings"} on the board. ${left} days to build on this.`, e: "🚀" };
+  return { h: "New month, new opportunity.", s: `Clean slate, full pipeline. ${left} days to make it count.`, e: "✨" };
 }
 
 function getDaysLeft() {
@@ -41,47 +67,37 @@ function getMonthName() {
   return new Date().toLocaleString("en-US", { month: "long" });
 }
 
-// ─── Fonts ──────────────────────────────────────────────────────────────────
-const DISPLAY = "'Outfit', system-ui, sans-serif";
-const BODY = "'DM Sans', system-ui, sans-serif";
-const MONO = "'JetBrains Mono', monospace";
+const F = {
+  display: "'Instrument Sans', 'DM Sans', system-ui, sans-serif",
+  body: "'DM Sans', system-ui, sans-serif",
+  mono: "'JetBrains Mono', 'SF Mono', monospace",
+};
 
-// ─── Shared mini-components ─────────────────────────────────────────────────
-function PipelineRow({ icon, label, count, arr, color, accent }: {
-  icon: string; label: string; count: number; arr?: number; color: string; accent?: boolean;
+// ─── PipelineRow ────────────────────────────────────────────────────────────
+function PRow({ icon, label, count, arr, hl, neg }: {
+  icon: string; label: string; count: number; arr?: number; hl?: boolean; neg?: boolean;
 }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "11px 0",
-      borderBottom: "1px solid #F1F5F9",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 15, width: 24, textAlign: "center" as const }}>{icon}</span>
-        <span style={{ fontSize: 13, fontFamily: BODY, color: "#475569", fontWeight: 500 }}>{label}</span>
-      </div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", borderBottom: `1px solid ${B.borderLight}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: neg ? "#FEF2F2" : hl ? B.primaryFaint : "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{icon}</div>
+        <span style={{ fontSize: 14, fontFamily: F.body, color: B.text, fontWeight: 500 }}>{label}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {arr !== undefined && arr > 0 && (
-          <span style={{ fontSize: 12, fontFamily: MONO, color: "#94A3B8", fontWeight: 500 }}>
-            {fmt(arr)}
-          </span>
+          <span style={{ fontSize: 12, fontFamily: F.mono, fontWeight: 500, color: neg ? B.danger : B.faint }}>{neg ? "-" : ""}{fmt(arr)}</span>
         )}
         <span style={{
-          fontSize: 14, fontFamily: MONO, fontWeight: 700,
-          color: accent ? color : "#1E293B",
-          background: accent ? `${color}12` : "#F8FAFC",
-          padding: "2px 10px", borderRadius: 6,
-          minWidth: 32, textAlign: "center" as const,
-        }}>
-          {count}
-        </span>
+          fontSize: 15, fontFamily: F.mono, fontWeight: 700,
+          color: neg && count > 0 ? B.danger : hl ? B.primary : B.text,
+          background: neg && count > 0 ? "#FEF2F2" : hl ? B.primaryFaint : "#F1F5F9",
+          padding: "3px 12px", borderRadius: 8, minWidth: 36, textAlign: "center" as const,
+        }}>{count}</span>
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function RepDashboard() {
   const params = useParams();
@@ -92,296 +108,252 @@ export default function RepDashboard() {
   const [rep, setRep] = useState<RepInfo | null>(null);
   const [metrics, setMetrics] = useState<AEMetrics | BDRMetrics | null>(null);
   const [monthLabel, setMonthLabel] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue());
+  const [availableMonths, setAvailableMonths] = useState<MonthOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [animReady, setAnimReady] = useState(false);
+  const [anim, setAnim] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/commissions/rep/${repId}?token=${token}`);
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("unauthorized");
-        throw new Error("load_failed");
-      }
+      const res = await fetch(`/api/commissions/rep/${repId}?token=${token}&month=${selectedMonth}`);
+      if (!res.ok) { throw new Error(res.status === 401 ? "unauthorized" : "load_failed"); }
       const data = await res.json();
-      setRep(data.rep);
-      setMetrics(data.metrics);
-      setMonthLabel(data.meta?.monthLabel || "");
+      setRep(data.rep); setMetrics(data.metrics); setMonthLabel(data.meta?.monthLabel || "");
+      if (data.availableMonths) setAvailableMonths(data.availableMonths);
       setError("");
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [repId, token]);
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  }, [repId, token, selectedMonth]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { const i = setInterval(fetchData, 120000); return () => clearInterval(i); }, [fetchData]);
   useEffect(() => {
-    const interval = setInterval(fetchData, 120000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    setAnim(false);
+    if (!loading && !error && metrics) { const t = setTimeout(() => setAnim(true), 150); return () => clearTimeout(t); }
+  }, [loading, error, metrics, selectedMonth]);
 
-  useEffect(() => {
-    if (!loading && !error && metrics) {
-      const t = setTimeout(() => setAnimReady(true), 100);
-      return () => clearTimeout(t);
-    }
-  }, [loading, error, metrics]);
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: B.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" as const, gap: 16 }}>
+      <style>{KF}</style>
+      <img src="/logo.png" alt="FINNY" style={{ width: 36, height: 36, borderRadius: 8, opacity: 0.7, animation: "breathe 2s ease-in-out infinite" }} />
+      <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body }}>Loading your dashboard...</div>
+    </div>
+  );
 
-  // ─── Loading ────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#FAFBFC", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <style>{KEYFRAMES}</style>
-        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#CBD5E1", animation: "pulse 1.4s ease-in-out infinite" }} />
-      </div>
-    );
-  }
-
-  // ─── Error ──────────────────────────────────────────────────────────────
-  if (error || !rep || !metrics) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#FAFBFC", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
-        <style>{KEYFRAMES}</style>
-        <div style={{ textAlign: "center", maxWidth: 320 }}>
-          <div style={{ fontSize: 44, marginBottom: 20 }}>🔒</div>
-          <div style={{ fontSize: 19, fontWeight: 600, color: "#1E293B", fontFamily: DISPLAY, letterSpacing: "-0.02em" }}>
-            {error === "unauthorized" ? "Link expired or invalid" : "Something went wrong"}
-          </div>
-          <div style={{ fontSize: 14, color: "#94A3B8", marginTop: 10, fontFamily: BODY, lineHeight: 1.5 }}>
-            Ask Curtis for a fresh dashboard link.
-          </div>
+  if (error || !rep || !metrics) return (
+    <div style={{ minHeight: "100vh", background: B.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+      <style>{KF}</style>
+      <div style={{ textAlign: "center", maxWidth: 340 }}>
+        <img src="/logo.png" alt="FINNY" style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 24, opacity: 0.5 }} />
+        <div style={{ fontSize: 20, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.03em" }}>
+          {error === "unauthorized" ? "Link expired" : "Something went wrong"}
+        </div>
+        <div style={{ fontSize: 14, color: B.muted, marginTop: 10, fontFamily: F.body, lineHeight: 1.6 }}>
+          {error === "unauthorized" ? "This dashboard link is no longer valid. Reach out for a fresh one." : "Hit a snag loading data. Try refreshing."}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   const isAE = rep.type === "ae";
   const aeM = metrics as AEMetrics;
   const bdrM = metrics as BDRMetrics;
-  const attainment = isAE ? aeM.attainment : bdrM.attainment;
-  const firstName = rep.name.split(" ")[0];
-  const daysLeft = getDaysLeft();
-  const totalDays = getDaysInMonth();
-  const todayDate = new Date().getDate();
-  const msg = getMessage(attainment, daysLeft);
+  const att = isAE ? aeM.attainment : bdrM.attainment;
+  const comm = isAE ? aeM.commission : bdrM.commission;
+  const name1 = rep.name.split(" ")[0];
+  const dLeft = getDaysLeft();
+  const tDays = getDaysInMonth();
+  const today = new Date().getDate();
+  const isCur = selectedMonth === getCurrentMonthValue();
+  const msg = getMsg(att, dLeft, isAE);
+  const cur = isAE ? aeM.netARR : bdrM.netMeetings;
+  const tgt = isAE ? aeM.monthlyQuota : bdrM.monthlyTarget;
+  const rem = Math.max(0, tgt - cur);
 
-  const current = isAE ? aeM.netARR : bdrM.netMeetings;
-  const target = isAE ? aeM.monthlyQuota : bdrM.monthlyTarget;
-  const remaining = Math.max(0, target - current);
+  const sz = 200, sw = 12, r = (sz - sw) / 2, c = 2 * Math.PI * r;
+  const off = c * (1 - Math.min(anim ? att : 0, 1.5));
+  const gid = `rg-${rep.id}`;
 
-  // Ring
-  const ringSize = 220;
-  const strokeW = 14;
-  const r = (ringSize - strokeW) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - Math.min(animReady ? attainment : 0, 1.5));
-
-  // Anim helper
-  const anim = (delay: string) => ({
-    opacity: animReady ? 1 : 0,
-    transform: animReady ? "translateY(0)" : "translateY(14px)",
-    transition: `all 0.7s cubic-bezier(0.16, 1, 0.3, 1) ${delay}`,
-  });
-  const animScale = (delay: string) => ({
-    opacity: animReady ? 1 : 0,
-    transform: animReady ? "scale(1)" : "scale(0.9)",
-    transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${delay}`,
-  });
+  const an = (d: string) => ({ opacity: anim ? 1 : 0, transform: anim ? "translateY(0)" : "translateY(16px)", transition: `all 0.8s cubic-bezier(0.16,1,0.3,1) ${d}` });
+  const anS = (d: string) => ({ opacity: anim ? 1 : 0, transform: anim ? "scale(1)" : "scale(0.92)", transition: `all 1s cubic-bezier(0.16,1,0.3,1) ${d}` });
 
   return (
-    <div style={{ minHeight: "100vh", background: "#FAFBFC", position: "relative", overflow: "hidden" }}>
-      <style>{KEYFRAMES}</style>
+    <div style={{ minHeight: "100vh", background: B.bg, position: "relative", overflow: "hidden" }}>
+      <style>{KF}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* Background glow */}
-      <div style={{
-        position: "fixed", top: -300, right: -200, width: 700, height: 700,
-        background: `radial-gradient(circle, ${rep.color}08 0%, transparent 70%)`,
-        pointerEvents: "none",
-      }} />
+      {/* Ambient */}
+      <div style={{ position: "fixed", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: `radial-gradient(circle, ${B.primary}06 0%, transparent 60%)`, pointerEvents: "none" }} />
 
-      <div style={{ maxWidth: 420, margin: "0 auto", padding: "48px 24px 40px", position: "relative", zIndex: 1 }}>
+      <div style={{ maxWidth: 440, margin: "0 auto", padding: "0 20px", position: "relative", zIndex: 1 }}>
 
-        {/* ─── Month pill ──────────────────────────────────────────── */}
-        <div style={anim("0s")}>
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 7,
-            fontSize: 12, fontWeight: 500, color: "#64748B", fontFamily: BODY,
-            background: "#fff", border: "1px solid #E8ECF0", borderRadius: 100,
-            padding: "5px 14px 5px 10px", boxShadow: "0 1px 3px rgba(0,0,0,.03)",
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10B981", display: "inline-block", animation: "pulse 2s ease-in-out infinite" }} />
-            {monthLabel || getMonthName()}
+        {/* ─── Top bar ────────────────────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0 12px", ...an("0s") }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img src="/logo.png" alt="FINNY" style={{ width: 28, height: 28, borderRadius: 6 }} />
+            <div style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Dashboard</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {isCur && <div style={{ width: 6, height: 6, borderRadius: "50%", background: B.accent, animation: "breathe 2.5s ease-in-out infinite" }} />}
+            {availableMonths.length > 1 ? (
+              <select value={selectedMonth} onChange={(e) => { setSelectedMonth(e.target.value); setLoading(true); }}
+                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${B.border}`, background: B.card, color: B.muted, fontSize: 12, fontFamily: F.body, fontWeight: 500, cursor: "pointer", outline: "none", boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
+                {availableMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            ) : (
+              <span style={{ fontSize: 12, fontWeight: 500, color: B.muted, fontFamily: F.body }}>{monthLabel || getMonthName()}</span>
+            )}
           </div>
         </div>
 
-        {/* ─── Greeting ────────────────────────────────────────────── */}
-        <div style={anim("0.06s")}>
-          <div style={{ marginTop: 28 }}>
-            <div style={{ fontSize: 15, color: "#94A3B8", fontFamily: BODY }}>Hey {firstName} {msg.emoji}</div>
-            <h1 style={{ fontSize: 34, fontWeight: 700, color: "#0F172A", fontFamily: DISPLAY, letterSpacing: "-0.035em", lineHeight: 1.05, margin: "6px 0 0" }}>{msg.headline}</h1>
-            <p style={{ fontSize: 15, color: "#64748B", fontFamily: BODY, lineHeight: 1.55, margin: "10px 0 0" }}>{msg.sub}</p>
-          </div>
-        </div>
+        {/* ─── Hero card ──────────────────────────────────────────── */}
+        <div style={{ background: B.card, borderRadius: 24, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.04), 0 8px 32px rgba(0,0,0,.03)", padding: "32px 28px 36px", marginTop: 8, ...an("0.05s") }}>
+          {/* Greeting */}
+          <div style={{ fontSize: 14, color: B.faint, fontFamily: F.body }}>{isCur ? `Hey ${name1}` : name1}</div>
+          <h1 style={{ fontSize: 30, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.035em", lineHeight: 1.1, margin: "6px 0 0" }}>
+            {msg.h} {msg.e}
+          </h1>
+          <p style={{ fontSize: 14, color: B.muted, fontFamily: F.body, lineHeight: 1.6, margin: "10px 0 0", maxWidth: 340 }}>{msg.s}</p>
 
-        {/* ─── Progress ring ───────────────────────────────────────── */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "40px 0 32px", ...animScale("0.12s") }}>
-          <div style={{ position: "relative", width: ringSize, height: ringSize }}>
-            <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={ringSize / 2} cy={ringSize / 2} r={r} fill="none" stroke="#F1F5F9" strokeWidth={strokeW} />
-              <circle cx={ringSize / 2} cy={ringSize / 2} r={r} fill="none" stroke={rep.color} strokeWidth={strokeW}
-                strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-                style={{
-                  transition: "stroke-dashoffset 1.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                  filter: attainment >= 1.0 ? `drop-shadow(0 0 10px ${rep.color}50)` : "none",
-                }} />
-              {attainment >= 1.0 && (
-                <circle cx={ringSize / 2} cy={ringSize / 2} r={r} fill="none" stroke={rep.color} strokeWidth={strokeW}
-                  strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-                  opacity={0.2} style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(0.34, 1.56, 0.64, 1)", filter: "blur(8px)" }} />
-              )}
-            </svg>
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 46, fontWeight: 800, fontFamily: DISPLAY, color: "#0F172A", letterSpacing: "-0.04em", lineHeight: 1 }}>
-                {fmtPct(animReady ? attainment : 0)}
+          {/* Ring */}
+          <div style={{ display: "flex", justifyContent: "center", padding: "36px 0 28px", ...anS("0.15s") }}>
+            <div style={{ position: "relative", width: sz, height: sz }}>
+              <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform: "rotate(-90deg)" }}>
+                <defs>
+                  <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor={B.primary} />
+                    <stop offset="100%" stopColor={att >= 1.0 ? B.accent : B.primaryLight} />
+                  </linearGradient>
+                </defs>
+                <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={B.borderLight} strokeWidth={sw} />
+                <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={sw}
+                  strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round"
+                  style={{ transition: "stroke-dashoffset 1.6s cubic-bezier(0.34,1.56,0.64,1)", filter: att >= 1.0 ? `drop-shadow(0 0 12px ${B.primary}40)` : "none" }} />
+                {att >= 1.0 && <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={B.primary} strokeWidth={sw}
+                  strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round" opacity={0.15}
+                  style={{ transition: "stroke-dashoffset 1.6s cubic-bezier(0.34,1.56,0.64,1)", filter: "blur(10px)" }} />}
+              </svg>
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+                <div style={{ fontSize: 44, fontWeight: 700, fontFamily: F.display, color: B.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
+                  {fmtPct(anim ? att : 0)}
+                </div>
+                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, marginTop: 4, fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" as const }}>
+                  of quota
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: "#94A3B8", fontFamily: BODY, marginTop: 4, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500 }}>of target</div>
+            </div>
+          </div>
+
+          {/* Bar + numbers */}
+          <div style={{ padding: "0 4px" }}>
+            <div style={{ width: "100%", height: 8, background: B.borderLight, borderRadius: 100, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 100, minWidth: att > 0 ? 8 : 0,
+                width: `${Math.min(att * 100, 100)}%`,
+                background: `linear-gradient(90deg, ${B.primary}, ${att >= 1.0 ? B.accent : B.primaryLight})`,
+                transition: "width 1.4s cubic-bezier(0.34,1.56,0.64,1) 0.5s",
+              }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+              <div>
+                <div style={SL}>{isAE ? "Net ARR" : "Meetings"}</div>
+                <div style={{ ...SV, color: B.primary }}>{isAE ? fmt(cur) : cur}</div>
+              </div>
+              <div style={{ textAlign: "center" as const }}>
+                <div style={SL}>Remaining</div>
+                <div style={SV}>{isAE ? fmt(rem) : Math.ceil(rem)}</div>
+              </div>
+              <div style={{ textAlign: "right" as const }}>
+                <div style={SL}>{isAE ? "Monthly Quota" : "Target"}</div>
+                <div style={SV}>{isAE ? fmt(tgt) : tgt}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* ─── Current / Remaining / Target ────────────────────────── */}
-        <div style={{ ...CARD, ...anim("0.2s") }}>
-          {/* Mini bar */}
-          <div style={{ width: "100%", height: 6, background: "#F1F5F9", borderRadius: 100, position: "relative", overflow: "visible", marginBottom: 24 }}>
-            <div style={{
-              height: "100%", borderRadius: 100, minWidth: attainment > 0 ? 6 : 0,
-              width: `${Math.min(attainment * 100, 100)}%`,
-              background: `linear-gradient(90deg, ${rep.color}, ${rep.color}DD)`,
-              transition: "width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) 0.4s",
-            }} />
-            <div style={{ position: "absolute", right: 0, top: -3, width: 1, height: 12, background: "#CBD5E1" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
+        {/* ─── Commission ─────────────────────────────────────────── */}
+        <div style={{
+          background: `linear-gradient(135deg, ${B.primary}, ${B.primaryLight})`,
+          borderRadius: 20, padding: "24px 26px", marginTop: 12,
+          boxShadow: `0 4px 24px ${B.primary}20`, ...an("0.22s"),
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={NUM_LABEL}>Current</div>
-              <div style={{ ...NUM_VAL, color: rep.color }}>{isAE ? fmt(current) : current}</div>
-            </div>
-            <div style={{ textAlign: "center" as const }}>
-              <div style={NUM_LABEL}>Remaining</div>
-              <div style={NUM_VAL}>
-                {isAE ? fmt(remaining) : Math.max(0, Math.ceil(remaining))}
-                <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400, marginLeft: 3 }}>{isAE ? "ARR" : "mtgs"}</span>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.65)", fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                Commission Earned
+              </div>
+              <div style={{ fontSize: 34, fontWeight: 700, fontFamily: F.display, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1 }}>
+                {fmt(comm)}
               </div>
             </div>
-            <div style={{ textAlign: "right" as const }}>
-              <div style={NUM_LABEL}>Target</div>
-              <div style={NUM_VAL}>{isAE ? fmt(target) : target}</div>
-            </div>
+            {isAE && (
+              <div style={{ textAlign: "right" as const, marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 4 }}>Gross → Net</div>
+                <div style={{ fontSize: 12, fontFamily: F.mono, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
+                  {fmt(aeM.grossARR)} <span style={{ color: (aeM.churnARR || 0) > 0 ? "#FCA5A5" : "rgba(255,255,255,0.5)" }}>− {fmt(aeM.churnARR || 0)}</span>
+                </div>
+              </div>
+            )}
           </div>
+          {isAE && aeM.tierBreakdown && aeM.tierBreakdown.length > 0 && (
+            <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+              {aeM.tierBreakdown.map((t, i) => (
+                <div key={i} style={{ flex: 1, padding: "10px 12px", borderRadius: 12, background: t.amount > 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)", backdropFilter: "blur(8px)" }}>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 4 }}>{t.label}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.mono, color: t.amount > 0 ? "#fff" : "rgba(255,255,255,0.3)" }}>{fmt(t.amount)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* ─── Pipeline activity ───────────────────────────────────── */}
-        <div style={{ ...CARD, marginTop: 10, padding: "6px 20px 4px", ...anim("0.3s") }}>
-          <div style={{ fontSize: 10, color: "#94A3B8", fontFamily: BODY, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, padding: "14px 0 4px" }}>
-            {isAE ? "Pipeline This Month" : "Activity This Month"}
+        {/* ─── Pipeline ───────────────────────────────────────────── */}
+        <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "8px 22px 6px", marginTop: 12, ...an("0.3s") }}>
+          <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, padding: "16px 0 6px" }}>
+            {isAE ? "Pipeline Breakdown" : "Activity"}
           </div>
-
           {isAE ? (
             <>
-              <PipelineRow icon="📞" label="Intro Calls Scheduled" count={aeM.introCallsScheduled} color={rep.color} />
-              <PipelineRow icon="🚀" label="To Be Onboarded" count={aeM.toBeOnboarded.count} arr={aeM.toBeOnboarded.arr} color={rep.color} accent />
-              <PipelineRow icon="✅" label="Closed Won" count={aeM.closedWon.count} arr={aeM.closedWon.arr} color="#10B981" accent />
-              <PipelineRow icon="❌" label="Closed Lost" count={aeM.closedLost.count} arr={aeM.closedLost.arr} color="#EF4444" />
-              <div style={{ borderBottom: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 15, width: 24, textAlign: "center" as const }}>🔄</span>
-                  <span style={{ fontSize: 13, fontFamily: BODY, color: "#475569", fontWeight: 500 }}>Churned</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {aeM.churned.arr > 0 && (
-                    <span style={{ fontSize: 12, fontFamily: MONO, color: "#F87171", fontWeight: 500 }}>-{fmt(aeM.churned.arr)}</span>
-                  )}
-                  <span style={{
-                    fontSize: 14, fontFamily: MONO, fontWeight: 700, color: aeM.churned.count > 0 ? "#EF4444" : "#1E293B",
-                    background: aeM.churned.count > 0 ? "#FEF2F2" : "#F8FAFC",
-                    padding: "2px 10px", borderRadius: 6, minWidth: 32, textAlign: "center" as const,
-                  }}>
-                    {aeM.churned.count}
-                  </span>
-                </div>
-              </div>
+              <PRow icon="📞" label="Intro Calls" count={aeM.introCallsScheduled} />
+              <PRow icon="🚀" label="To Be Onboarded" count={aeM.toBeOnboarded.count} arr={aeM.toBeOnboarded.arr} hl />
+              <PRow icon="✅" label="Closed Won" count={aeM.closedWon.count} arr={aeM.closedWon.arr} hl />
+              <PRow icon="❌" label="Closed Lost" count={aeM.closedLost.count} arr={aeM.closedLost.arr} />
+              <PRow icon="🔄" label="Churned" count={aeM.churned?.count || 0} arr={aeM.churned?.arr || 0} neg />
             </>
           ) : (
             <>
-              <PipelineRow icon="📞" label="Intro Calls Scheduled" count={bdrM.introCallsScheduled} color={rep.color} accent />
-              <PipelineRow icon="📋" label="Qualified Meetings" count={bdrM.netMeetings} color={rep.color} accent />
-              <div style={{ padding: "11px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 15, width: 24, textAlign: "center" as const }}>🎯</span>
-                  <span style={{ fontSize: 13, fontFamily: BODY, color: "#475569", fontWeight: 500 }}>Monthly Target</span>
-                </div>
-                <span style={{ fontSize: 14, fontFamily: MONO, fontWeight: 700, color: "#1E293B", background: "#F8FAFC", padding: "2px 10px", borderRadius: 6 }}>
-                  {bdrM.monthlyTarget}
-                </span>
-              </div>
+              <PRow icon="📞" label="Intro Calls" count={bdrM.introCallsScheduled} hl />
+              <PRow icon="📋" label="Qualified Meetings" count={bdrM.netMeetings} hl />
+              <PRow icon="🎯" label="Monthly Target" count={bdrM.monthlyTarget} />
             </>
           )}
         </div>
 
-        {/* ─── Days remaining ──────────────────────────────────────── */}
-        <div style={{ ...CARD, marginTop: 10, textAlign: "center" as const, padding: "18px 22px 20px", ...anim("0.38s") }}>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, justifyContent: "center" }}>
-            {Array.from({ length: totalDays }, (_, i) => {
-              const dayNum = i + 1;
-              const isPast = dayNum < todayDate;
-              const isToday = dayNum === todayDate;
-              return (
-                <div key={i} style={{
-                  width: 9, height: 9, borderRadius: 2.5,
-                  background: isToday ? rep.color : isPast ? `${rep.color}35` : "#EEF1F5",
-                  boxShadow: isToday ? `0 0 8px ${rep.color}50` : "none",
-                  transition: "all 0.3s",
-                }} />
-              );
-            })}
+        {/* ─── Days grid (current month only) ─────────────────────── */}
+        {isCur && (
+          <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03)", padding: "20px 22px 24px", marginTop: 12, textAlign: "center" as const, ...an("0.38s") }}>
+            <div style={{ display: "flex", gap: 3.5, flexWrap: "wrap" as const, justifyContent: "center" }}>
+              {Array.from({ length: tDays }, (_, i) => {
+                const d = i + 1, past = d < today, isT = d === today;
+                return <div key={i} style={{ width: 10, height: 10, borderRadius: 3, background: isT ? B.primary : past ? `${B.primary}30` : B.borderLight, boxShadow: isT ? `0 0 8px ${B.primary}50` : "none", transition: "all 0.3s" }} />;
+              })}
+            </div>
+            <div style={{ fontSize: 14, color: B.muted, fontFamily: F.body, marginTop: 16, lineHeight: 1.4 }}>
+              <strong style={{ color: B.text, fontWeight: 700 }}>{dLeft}</strong> selling days left in {monthLabel || getMonthName()}
+            </div>
           </div>
-          <div style={{ fontSize: 13, color: "#64748B", fontFamily: BODY, marginTop: 14, lineHeight: 1.4 }}>
-            <strong style={{ color: "#1E293B", fontWeight: 600 }}>{daysLeft}</strong> selling days left in {monthLabel || getMonthName()}
-          </div>
-        </div>
+        )}
 
-        {/* ─── Footer ──────────────────────────────────────────────── */}
-        <div style={{
-          textAlign: "center" as const, fontSize: 11, color: "#CBD5E1", fontFamily: BODY,
-          marginTop: 36, letterSpacing: "0.01em",
-          opacity: animReady ? 1 : 0, transition: "opacity 0.6s ease 0.5s",
-        }}>
-          Updates every 2 min · Data from Attio
+        {/* ─── Footer ─────────────────────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "32px 0 40px", opacity: anim ? 1 : 0, transition: "opacity 0.6s ease 0.6s" }}>
+          <img src="/logo.png" alt="" style={{ width: 14, height: 14, borderRadius: 3, opacity: 0.3 }} />
+          <span style={{ fontSize: 11, color: B.faint, fontFamily: F.body }}>Updates every 2 min · Powered by FINNY</span>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Shared styles ──────────────────────────────────────────────────────────
-const CARD: React.CSSProperties = {
-  background: "#fff", borderRadius: 18, padding: "22px 22px 26px",
-  border: "1px solid #E8ECF0",
-  boxShadow: "0 1px 4px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)",
-};
-const NUM_LABEL: React.CSSProperties = {
-  fontSize: 10, color: "#94A3B8", fontFamily: "'DM Sans', system-ui, sans-serif",
-  letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4,
-};
-const NUM_VAL: React.CSSProperties = {
-  fontSize: 20, fontWeight: 700, color: "#1E293B",
-  fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em",
-};
-
-const KEYFRAMES = `
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.92); }
-}
-`;
+const SL: React.CSSProperties = { fontSize: 10, color: "#94A3B8", fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 };
+const SV: React.CSSProperties = { fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" };
+const KF = `@keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.94); } }`;

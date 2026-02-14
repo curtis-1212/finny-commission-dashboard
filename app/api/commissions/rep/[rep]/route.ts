@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-        AE_DATA,
-        BDR_DATA,
-        getCurrentMonthRange,
-        buildOwnerMap,
+  AE_DATA,
+  BDR_DATA,
+  calcAECommission,
+  calcBDRCommission,
+  getMonthRange,
+  parseMonthParam,
+  getAvailableMonths,
+  buildOwnerMap,
 } from "@/lib/commission-config";
 import { attioQuery, getVal, validateToken } from "@/lib/attio";
 
 export const revalidate = 60;
 
-// --- Stage buckets (must match exact Attio Deal stage names) ---
+// ─── Stage buckets ──────────────────────────────────────────────────────────
 const CLOSED_WON_STAGES = ["Closed Won"];
 const TO_BE_ONBOARDED_STAGES = ["To Be Onboarded"];
 const CLOSED_LOST_STAGES = ["Closed Lost"];
 const INTRO_CALL_STAGES = ["Introductory Call"];
 
+// All stages we query — bucket server-side
 const ALL_TRACKED_STAGES = [
   ...CLOSED_WON_STAGES,
   ...TO_BE_ONBOARDED_STAGES,
@@ -23,175 +28,198 @@ const ALL_TRACKED_STAGES = [
   "Live",
 ];
 
-function stageFilter(stages: string[]) {
-        if (stages.length === 1) return { stage: stages[0] };
-        return { "$or": stages.map((s) => ({ stage: s })) };
+// Helper: Attio $or for stages
+function stageOr(stages: string[]) {
+  return { "$or": stages.map((s) => ({ stage: s })) };
 }
 
 export async function GET(
-        request: NextRequest,
-      { params }: { params: { rep: string } }
-      ) {
-        const repId = params.rep;
-        const token = request.nextUrl.searchParams.get("token");
-  const monthParam = request.nextUrl.searchParams.get("month") || undefined;
+  request: NextRequest,
+  { params }: { params: { rep: string } }
+) {
+  const repId = params.rep;
+  const token = request.nextUrl.searchParams.get("token");
+  const monthParam = request.nextUrl.searchParams.get("month");
 
   if (!validateToken(repId, token)) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const validReps = ["jason", "kelcy", "max"];
-        if (!validReps.includes(repId)) {
-                  return NextResponse.json({ error: "Not found" }, { status: 404 });
-        }
+  if (!validReps.includes(repId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   try {
-            const OWNER_MAP = buildOwnerMap();
-            const { startISO, endISO, label: monthLabel } = getCurrentMonthRange(monthParam);
+    const OWNER_MAP = buildOwnerMap();
+    const { year, month } = parseMonthParam(monthParam);
+    const { startISO, endISO, label: monthLabel } = getMonthRange(year, month);
+    const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-          const dealsRes = await attioQuery("deals", {
-                      filter: {
-                                    "$and": [
-                                          { close_date: { "$gte": startISO, "$lte": endISO } },
-                                                    stageFilter(ALL_TRACKED_STAGES),
-                                                  ],
-                      },
-                      limit: 500,
-          });
-            const deals = dealsRes?.data || [];
+    console.log(`Rep API (${repId}): querying ${monthLabel} (${startISO} → ${endISO})`);
 
-const introCallDeals = deals.filter((d: any) => {
-  const stage = getVal(d, "stage");
-  return INTRO_CALL_STAGES.includes(stage);
-});
-          // Try to get churned people (non-fatal if attribute doesn't exist)
-          let churnedSet = new Set<string>();
-            try {
-                        const churnRes = await attioQuery("people", {
-                                      filter: { cause_of_churn: { "$not_empty": true } },
-                                      limit: 500,
-                        });
-                        churnedSet = new Set(
-                                      (churnRes?.data || []).map((p: any) => p.id?.record_id).filter(Boolean)
-                                    );
-            } catch {
-                        // cause_of_churn attribute may not exist - skip churn detection
-            }
+    // ─── Query all tracked-stage deals for this month ───────────
+    const dealsRes = await attioQuery("deals", {
+      filter: {
+        "$and": [
+          { close_date: { "$gte": startISO, "$lte": endISO } },
+          stageOr(ALL_TRACKED_STAGES),
+        ],
+      },
+      limit: 500,
+    });
+    const deals = dealsRes?.data || [];
 
-          // === BDR PATH ===
-          if (repId === "max") {
-                      let meetings = 0;
-                      let introCallCount = 0;
-                      for (const deal of introCallDeals) {
-                                    const leadOwner = getVal(deal, "lead_owner");
-                                    if (leadOwner === process.env.ATTIO_MAX_UUID) introCallCount += 1;
-                      }
-                     for (const deal of deals) {
-  const leadOwner = getVal(deal, "lead_owner");
-  if (leadOwner !== process.env.ATTIO_MAX_UUID) continue;
-  const stage = getVal(deal, "stage") || "";
-  if (!INTRO_CALL_STAGES.includes(stage)) {
-    meetings += 1;
-  }
-}
-                                                                   const attainment =
-                                                                                 BDR_DATA.monthlyQuota > 0 ? meetings / BDR_DATA.monthlyQuota : 0;
+    console.log(`Rep API (${repId}): got ${deals.length} deals across all stages`);
 
-              return NextResponse.json({
-                            rep: {
-                                            id: "max",
-                                            name: BDR_DATA.name,
-                                            role: BDR_DATA.role,
-                                            initials: BDR_DATA.initials,
-                                            color: BDR_DATA.color,
-                                            type: "bdr",
-                            },
-                            metrics: {
-                                            netMeetings: meetings,
-                                            monthlyTarget: BDR_DATA.monthlyQuota,
-                                            attainment,
-                                            introCallsScheduled: introCallCount,
-                            },
-                            meta: { fetchedAt: new Date().toISOString(), monthLabel },
-              });
-          }
+    // ─── Churned people (graceful if slug doesn't exist) ────────
+    let churnedSet = new Set<string>();
+    try {
+      const churnRes = await attioQuery("people", {
+        filter: { churn_reason: { "$not_empty": true } },
+        limit: 500,
+      });
+      churnedSet = new Set(
+        (churnRes?.data || []).map((p: any) => p.id?.record_id).filter(Boolean)
+      );
+    } catch {
+      console.warn(`Rep API (${repId}): churn_reason query failed — skipping churn detection`);
+    }
 
-          // === AE PATH ===
-          const ae = AE_DATA.find((a) => a.id === repId);
-            if (!ae) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // ═══════════════════════════════════════════════════════════════
+    // BDR PATH
+    // ═══════════════════════════════════════════════════════════════
+    if (repId === "max") {
+      let meetings = 0;
+      let introCallCount = 0;
 
-          let netARR = 0;
-            let closedWonCount = 0;
-            let closedWonARR = 0;
-            let closedLostCount = 0;
-            let closedLostARR = 0;
-            let toBeOnboardedCount = 0;
-            let toBeOnboardedARR = 0;
-            let churnedCount = 0;
-            let churnedARR = 0;
+      for (const deal of deals) {
+        const leadOwner = getVal(deal, "lead_owner");
+        if (leadOwner !== process.env.ATTIO_MAX_UUID) continue;
 
-          for (const deal of deals) {
-                      const ownerUUID = getVal(deal, "owner");
-                      if (OWNER_MAP[ownerUUID] !== repId) continue;
+        const stage = getVal(deal, "stage") || "";
 
-              const value = getVal(deal, "value") || 0;
-                      const stage = getVal(deal, "stage") || "";
-                      const people = getVal(deal, "associated_people") || [];
-                      const isChurned =
-                                    Array.isArray(people) &&
-                                    people.some((pid: string) => churnedSet.has(pid));
+        // Intro calls: scheduled but demo hasn't happened yet
+        if (INTRO_CALL_STAGES.includes(stage)) {
+          introCallCount += 1;
+        } else {
+          // All other stages = demo happened = meeting credit
+          meetings += 1;
+        }
+      }
 
-              if (isChurned && CLOSED_WON_STAGES.includes(stage)) {
-                            churnedCount += 1;
-                            churnedARR += value;
-                            continue;
-              }
+      const { commission, attainment } = calcBDRCommission(meetings);
 
-              if (CLOSED_WON_STAGES.includes(stage)) {
-                            closedWonCount += 1;
-                            closedWonARR += value;
-                            netARR += value;
-              } else if (TO_BE_ONBOARDED_STAGES.includes(stage)) {
-                            toBeOnboardedCount += 1;
-                            toBeOnboardedARR += value;
-                            netARR += value;
-              } else if (CLOSED_LOST_STAGES.includes(stage)) {
-                            closedLostCount += 1;
-                            closedLostARR += value;
-              }
-          }
+      return NextResponse.json({
+        rep: {
+          id: "max", name: BDR_DATA.name, role: BDR_DATA.role,
+          initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr",
+        },
+        metrics: {
+          netMeetings: meetings,
+          monthlyTarget: BDR_DATA.monthlyQuota,
+          attainment,
+          commission,
+          introCallsScheduled: introCallCount,
+        },
+        meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
+        availableMonths: getAvailableMonths(),
+      });
+    }
 
-          let introCallCount = 0;
-            for (const deal of introCallDeals) {
-                        const ownerUUID = getVal(deal, "owner");
-                        if (OWNER_MAP[ownerUUID] === repId) introCallCount += 1;
-            }
+    // ═══════════════════════════════════════════════════════════════
+    // AE PATH
+    // ═══════════════════════════════════════════════════════════════
+    const ae = AE_DATA.find((a) => a.id === repId);
+    if (!ae) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-          const attainment = ae.monthlyQuota > 0 ? netARR / ae.monthlyQuota : 0;
+    // Bucket deals by stage for this rep
+    let grossARR = 0;
+    let churnARR = 0;
+    let closedWonCount = 0, closedWonARR = 0;
+    let closedLostCount = 0, closedLostARR = 0;
+    let toBeOnboardedCount = 0, toBeOnboardedARR = 0;
+    let churnedCount = 0;
+    let introCallCount = 0;
+    let totalDealCount = 0;
 
-          return NextResponse.json({
-                      rep: {
-                                    id: ae.id,
-                                    name: ae.name,
-                                    role: ae.role,
-                                    initials: ae.initials,
-                                    color: ae.color,
-                                    type: "ae",
-                      },
-                      metrics: {
-                                    netARR,
-                                    monthlyQuota: ae.monthlyQuota,
-                                    attainment,
-                                    introCallsScheduled: introCallCount,
-                                    toBeOnboarded: { count: toBeOnboardedCount, arr: toBeOnboardedARR },
-                                    closedWon: { count: closedWonCount, arr: closedWonARR },
-                                    closedLost: { count: closedLostCount, arr: closedLostARR },
-                                    churned: { count: churnedCount, arr: churnedARR },
-                      },
-                      meta: { fetchedAt: new Date().toISOString(), monthLabel },
-          });
+    for (const deal of deals) {
+      const ownerUUID = getVal(deal, "owner");
+      if (OWNER_MAP[ownerUUID] !== repId) continue;
+
+      const value = getVal(deal, "value") || 0;
+      const stage = getVal(deal, "stage") || "";
+      const people = getVal(deal, "associated_people") || [];
+      const isChurned = churnedSet.size > 0 &&
+        Array.isArray(people) &&
+        people.some((pid: string) => churnedSet.has(pid));
+
+      // Intro calls
+      if (INTRO_CALL_STAGES.includes(stage)) {
+        introCallCount += 1;
+        continue;
+      }
+
+      // Closed Lost
+      if (CLOSED_LOST_STAGES.includes(stage)) {
+        closedLostCount += 1;
+        closedLostARR += value;
+        continue;
+      }
+
+      // Commissionable stages: Closed Won, To Be Onboarded, Live
+      totalDealCount += 1;
+      grossARR += value;
+
+      if (isChurned) {
+        churnedCount += 1;
+        churnARR += value;
+      }
+
+      if (CLOSED_WON_STAGES.includes(stage) || stage === "Live") {
+        closedWonCount += 1;
+        closedWonARR += value;
+      } else if (TO_BE_ONBOARDED_STAGES.includes(stage)) {
+        toBeOnboardedCount += 1;
+        toBeOnboardedARR += value;
+      }
+    }
+
+    // Net ARR = gross commissionable - churn (matches Excel)
+    const netARR = grossARR - churnARR;
+    const { commission, attainment, tierBreakdown } = calcAECommission(
+      ae.monthlyQuota, ae.tiers, netARR
+    );
+
+    return NextResponse.json({
+      rep: {
+        id: ae.id, name: ae.name, role: ae.role,
+        initials: ae.initials, color: ae.color, type: "ae",
+      },
+      metrics: {
+        grossARR,
+        churnARR,
+        netARR,
+        monthlyQuota: ae.monthlyQuota,
+        attainment,
+        commission,
+        tierBreakdown: tierBreakdown.map((t) => ({
+          label: t.label, amount: t.amount,
+        })),
+        // Pipeline breakdown
+        introCallsScheduled: introCallCount,
+        toBeOnboarded: { count: toBeOnboardedCount, arr: toBeOnboardedARR },
+        closedWon: { count: closedWonCount, arr: closedWonARR },
+        closedLost: { count: closedLostCount, arr: closedLostARR },
+        churned: { count: churnedCount, arr: churnARR },
+        dealCount: totalDealCount,
+        excludedCount: churnedCount,
+      },
+      meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
+      availableMonths: getAvailableMonths(),
+    });
   } catch (err: any) {
-            console.error(`Rep API error (${repId}):`, err);
-            return NextResponse.json({ error: "Failed to load data" }, { status: 500 });
+    console.error(`Rep API error (${repId}):`, err);
+    return NextResponse.json({ error: "Failed to load data" }, { status: 500 });
   }
 }

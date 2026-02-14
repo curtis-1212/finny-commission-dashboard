@@ -36,7 +36,7 @@ export interface BDRConfig {
   type: "bdr";
 }
 
-// ─── AE Configs (Austin removed) ───────────────────────────────────────────
+// ─── AE Configs ─────────────────────────────────────────────────────────────
 export const AE_DATA: AEConfig[] = [
   {
     id: "jason",
@@ -94,10 +94,16 @@ export const BDR_DATA: BDRConfig = {
   type: "bdr",
 };
 
-// ─── All reps for iteration ─────────────────────────────────────────────────
+// ─── All reps ───────────────────────────────────────────────────────────────
 export const ALL_REPS = [
-  ...AE_DATA.map((ae) => ({ id: ae.id, name: ae.name, role: ae.role, initials: ae.initials, color: ae.color, type: ae.type as string })),
-  { id: BDR_DATA.id, name: BDR_DATA.name, role: BDR_DATA.role, initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr" },
+  ...AE_DATA.map((ae) => ({
+    id: ae.id, name: ae.name, role: ae.role,
+    initials: ae.initials, color: ae.color, type: ae.type as string,
+  })),
+  {
+    id: BDR_DATA.id, name: BDR_DATA.name, role: BDR_DATA.role,
+    initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr",
+  },
 ];
 
 // ─── Commission Calculators ─────────────────────────────────────────────────
@@ -147,28 +153,57 @@ export function calcBDRCommission(netMeetings: number) {
 export const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
 
-// -- Date Helpers (fixes hardcoded month issue) ——————————————————————————————
-export function getCurrentMonthRange(monthParam?: string) {
-  let year: number, month: number;
-  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-    const [y, m] = monthParam.split("-").map(Number);
-    year = y;
-    month = m - 1; // JS months are 0-indexed
-  } else {
-    const now = new Date();
-    year = now.getUTCFullYear();
-    month = now.getUTCMonth();
-  }
-  const start = new Date(Date.UTC(year, month, 1));
-  const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59));
+// ─── Date Helpers ───────────────────────────────────────────────────────────
+
+/** Current month (backward compat) */
+export function getCurrentMonthRange() {
+  const now = new Date();
+  return getMonthRange(now.getUTCFullYear(), now.getUTCMonth() + 1);
+}
+
+/** Any year/month (1-indexed: 1=Jan) */
+export function getMonthRange(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59));
   return {
     startISO: start.toISOString().split("T")[0],
     endISO: end.toISOString().split("T")[0],
     label: start.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+    year,
+    month,
   };
 }
 
-// ─── Owner Map Builder (fixes empty-string key bug) ─────────────────────────
+/** Parse ?month=2026-01 query param, fallback to current */
+export function parseMonthParam(monthStr: string | null): { year: number; month: number } {
+  if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
+    const [y, m] = monthStr.split("-").map(Number);
+    if (y >= 2025 && m >= 1 && m <= 12) return { year: y, month: m };
+  }
+  const now = new Date();
+  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+}
+
+/** Available months from Dec 2025 to current */
+export function getAvailableMonths(): { value: string; label: string }[] {
+  const now = new Date();
+  const endYear = now.getUTCFullYear();
+  const endMonth = now.getUTCMonth() + 1;
+  const months: { value: string; label: string }[] = [];
+  let y = 2025, m = 12;
+  while (y < endYear || (y === endYear && m <= endMonth)) {
+    const d = new Date(Date.UTC(y, m - 1, 1));
+    months.push({
+      value: `${y}-${String(m).padStart(2, "0")}`,
+      label: d.toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+    });
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
+// ─── Owner Map Builder ──────────────────────────────────────────────────────
 export function buildOwnerMap(): Record<string, string> {
   const map: Record<string, string> = {};
   if (process.env.ATTIO_JASON_UUID) map[process.env.ATTIO_JASON_UUID] = "jason";
