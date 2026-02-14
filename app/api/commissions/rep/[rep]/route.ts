@@ -58,19 +58,41 @@ export async function GET(
 
     console.log(`Rep API (${repId}): querying ${monthLabel} (${startISO} → ${endISO})`);
 
-    // ─── Query all tracked-stage deals for this month ───────────
+    // ─── Query all tracked-stage deals (stage filter only) ──────────
+    // NOTE: Attio silently ignores close_date filter (likely a list attribute),
+    // so we fetch by stage only and filter dates in JavaScript.
     const dealsRes = await attioQuery("deals", {
-      filter: {
-        "$and": [
-          { close_date: { "$gte": startISO, "$lte": endISO } },
-          stageOr(ALL_TRACKED_STAGES),
-        ],
-      },
+      filter: stageOr(ALL_TRACKED_STAGES),
       limit: 500,
     });
-    const deals = dealsRes?.data || [];
+    const allDeals = dealsRes?.data || [];
 
-    console.log(`Rep API (${repId}): got ${deals.length} deals across all stages`);
+    console.log(`Rep API (${repId}): got ${allDeals.length} total deals (pre-date-filter)`);
+
+    // ─── Client-side date filter ────────────────────────────────────
+    const deals = allDeals.filter((deal: any) => {
+      const closeDate = getVal(deal, "close_date")
+        || getVal(deal, "closed_date")
+        || getVal(deal, "expected_close_date");
+      if (!closeDate) return false;
+      const d = String(closeDate).slice(0, 10); // "YYYY-MM-DD"
+      return d >= startISO && d <= endISO;
+    });
+
+    // Diagnostic logging when date filter yields 0
+    if (allDeals.length > 0 && deals.length === 0) {
+      const sample = allDeals.slice(0, 3).map((d: any) => {
+        const vals = d?.values || {};
+        const dateKeys = Object.keys(vals).filter(k =>
+          k.includes("date") || k.includes("close") || k.includes("closed")
+        );
+        return { dateKeys, sampleValues: dateKeys.map(k => ({ [k]: vals[k]?.[0] })) };
+      });
+      console.warn(`Rep API (${repId}): 0 deals after date filter! Sample date fields:`, JSON.stringify(sample, null, 2));
+      console.warn(`Rep API (${repId}): All attribute keys on first deal:`, Object.keys(allDeals[0]?.values || {}));
+    }
+
+    console.log(`Rep API (${repId}): ${deals.length} deals after date filter (${startISO} → ${endISO})`);
 
     // ─── Churned people (graceful if slug doesn't exist) ────────
     let churnedSet = new Set<string>();
