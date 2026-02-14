@@ -16,11 +16,12 @@ const CLOSED_LOST_STAGES = ["Closed Lost"];
 const INTRO_CALL_STAGES = ["Introductory Call"];
 
 const ALL_TRACKED_STAGES = [
-        ...CLOSED_WON_STAGES,
-        ...TO_BE_ONBOARDED_STAGES,
-        ...CLOSED_LOST_STAGES,
-        ...INTRO_CALL_STAGES,
-      ];
+  ...CLOSED_WON_STAGES,
+  ...TO_BE_ONBOARDED_STAGES,
+  ...CLOSED_LOST_STAGES,
+  ...INTRO_CALL_STAGES,
+  "Live",
+];
 
 function stageFilter(stages: string[]) {
         if (stages.length === 1) return { stage: stages[0] };
@@ -58,25 +59,10 @@ export async function GET(
           });
             const deals = dealsRes?.data || [];
 
-          let introCallDeals: any[] = [];
-            try {
-                        const introRes = await attioQuery("deals", {
-                                      filter: {
-                                                      "$and": [
-                                                                        stageFilter(INTRO_CALL_STAGES),
-                                                            { close_date: { "$gte": startISO, "$lte": endISO } },
-                                                                      ],
-                                      },
-                                      limit: 500,
-                        });
-                        introCallDeals = introRes?.data || [];
-            } catch {
-                        introCallDeals = deals.filter((d: any) => {
-                                      const stage = getVal(d, "stage");
-                                      return INTRO_CALL_STAGES.includes(stage);
-                        });
-            }
-
+const introCallDeals = deals.filter((d: any) => {
+  const stage = getVal(d, "stage");
+  return INTRO_CALL_STAGES.includes(stage);
+});
           // Try to get churned people (non-fatal if attribute doesn't exist)
           let churnedSet = new Set<string>();
             try {
@@ -99,10 +85,14 @@ export async function GET(
                                     const leadOwner = getVal(deal, "lead_owner");
                                     if (leadOwner === process.env.ATTIO_MAX_UUID) introCallCount += 1;
                       }
-                      for (const deal of deals) {
-                                    const leadOwner = getVal(deal, "lead_owner");
-                                    if (leadOwner === process.env.ATTIO_MAX_UUID) meetings += 1;
-                      }
+                     for (const deal of deals) {
+  const leadOwner = getVal(deal, "lead_owner");
+  if (leadOwner !== process.env.ATTIO_MAX_UUID) continue;
+  const stage = getVal(deal, "stage") || "";
+  if (!INTRO_CALL_STAGES.includes(stage)) {
+    meetings += 1;
+  }
+}
                                                                    const attainment =
                                                                                  BDR_DATA.monthlyQuota > 0 ? meetings / BDR_DATA.monthlyQuota : 0;
 
