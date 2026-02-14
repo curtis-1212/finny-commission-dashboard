@@ -31,7 +31,14 @@ export function getVal(record: any, slug: string): any {
   if (first?.target_record_id) return first.target_record_id;
   if (first?.referenced_actor_id) return first.referenced_actor_id;
   if (first?.currency_value !== undefined) return first.currency_value;
+  // Date attributes may store as ISO string directly
+  if (typeof first === "string") return first;
   return first;
+}
+
+// Get all attribute slugs from a record (diagnostic helper)
+export function getAttributeSlugs(record: any): string[] {
+  return Object.keys(record?.values || {});
 }
 
 // ─── Token Validation ───────────────────────────────────────────────────────
