@@ -14,7 +14,7 @@ import { attioQuery, getVal } from "@/lib/attio";
 export const revalidate = 60;
 
 // Commissionable stages: count toward quota
-const COMMISSIONABLE_STAGES = ["Closed Won", "To Be Onboarded"];
+const COMMISSIONABLE_STAGES = ["Closed Won", "To Be Onboarded", "Live"];
 
 // Helper: build Attio $or filter for stages
 function stageOr(stages: string[]) {
@@ -54,19 +54,42 @@ export async function GET(request: NextRequest) {
 
     console.log(`Exec API: querying ${monthLabel} (${startISO} → ${endISO})`);
 
-    // ─── Query commissionable deals for this month ──────────────────
+    // ─── Query commissionable deals (stage filter only) ─────────────
+    // NOTE: Attio silently ignores close_date filter (likely a list attribute),
+    // so we fetch by stage only and filter dates in JavaScript.
     const dealsRes = await attioQuery("deals", {
-      filter: {
-        "$and": [
-          { close_date: { "$gte": startISO, "$lte": endISO } },
-          stageOr(COMMISSIONABLE_STAGES),
-        ],
-      },
+      filter: stageOr(COMMISSIONABLE_STAGES),
       limit: 500,
     });
-    const deals = dealsRes?.data || [];
+    const allDeals = dealsRes?.data || [];
 
-    console.log(`Exec API: got ${deals.length} commissionable deals`);
+    console.log(`Exec API: got ${allDeals.length} total commissionable deals (pre-date-filter)`);
+
+    // ─── Client-side date filter ────────────────────────────────────
+    // Try multiple possible date attribute slugs
+    const deals = allDeals.filter((deal: any) => {
+      const closeDate = getVal(deal, "close_date")
+        || getVal(deal, "closed_date")
+        || getVal(deal, "expected_close_date");
+      if (!closeDate) return false;
+      const d = String(closeDate).slice(0, 10); // "YYYY-MM-DD"
+      return d >= startISO && d <= endISO;
+    });
+
+    // Diagnostic: log first few deals' date values to help debug
+    if (allDeals.length > 0 && deals.length === 0) {
+      const sample = allDeals.slice(0, 3).map((d: any) => {
+        const vals = d?.values || {};
+        const dateKeys = Object.keys(vals).filter(k =>
+          k.includes("date") || k.includes("close") || k.includes("closed")
+        );
+        return { dateKeys, sampleValues: dateKeys.map(k => ({ [k]: vals[k]?.[0] })) };
+      });
+      console.warn("Exec API: 0 deals after date filter! Sample date fields:", JSON.stringify(sample, null, 2));
+      console.warn("Exec API: All attribute keys on first deal:", Object.keys(allDeals[0]?.values || {}));
+    }
+
+    console.log(`Exec API: ${deals.length} deals after date filter (${startISO} → ${endISO})`);
 
     // ─── Get churned people (graceful if slug doesn't exist) ────────
     let churnedSet = new Set<string>();
