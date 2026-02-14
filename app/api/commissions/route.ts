@@ -15,7 +15,7 @@ import { attioQuery, getVal } from "@/lib/attio";
 export const revalidate = 60;
 
 // Stages that count as churn (customer stopped paying)
-const CHURN_STAGES = ["Churned", "Closed Lost"];
+const CHURN_STAGES = ["Churned"];
 
 // The Attio attribute slug for the onboarding date
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
