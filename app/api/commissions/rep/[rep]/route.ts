@@ -34,6 +34,7 @@ export async function GET(
       ) {
         const repId = params.rep;
         const token = request.nextUrl.searchParams.get("token");
+  const monthParam = request.nextUrl.searchParams.get("month") || undefined;
 
   if (!validateToken(repId, token)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -46,7 +47,7 @@ export async function GET(
 
   try {
             const OWNER_MAP = buildOwnerMap();
-            const { startISO, endISO, label: monthLabel } = getCurrentMonthRange();
+            const { startISO, endISO, label: monthLabel } = getCurrentMonthRange(monthParam);
 
           const dealsRes = await attioQuery("deals", {
                       filter: {
@@ -193,4 +194,4 @@ const introCallDeals = deals.filter((d: any) => {
             console.error(`Rep API error (${repId}):`, err);
             return NextResponse.json({ error: "Failed to load data" }, { status: 500 });
   }
-                                               }
+}
