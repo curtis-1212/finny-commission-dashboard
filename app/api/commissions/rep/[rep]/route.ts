@@ -67,14 +67,14 @@ const introCallDeals = deals.filter((d: any) => {
           let churnedSet = new Set<string>();
             try {
                         const churnRes = await attioQuery("people", {
-                                      filter: { churn_reason: { "$not_empty": true } },
+                                      filter: { cause_of_churn: { "$not_empty": true } },
                                       limit: 500,
                         });
                         churnedSet = new Set(
                                       (churnRes?.data || []).map((p: any) => p.id?.record_id).filter(Boolean)
                                     );
             } catch {
-                        // churn_reason attribute may not exist - skip churn detection
+                        // cause_of_churn attribute may not exist - skip churn detection
             }
 
           // === BDR PATH ===
@@ -193,4 +193,4 @@ const introCallDeals = deals.filter((d: any) => {
             console.error(`Rep API error (${repId}):`, err);
             return NextResponse.json({ error: "Failed to load data" }, { status: 500 });
   }
-}
+                                               }
