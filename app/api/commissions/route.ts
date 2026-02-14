@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
               filter: {
                         "$and": [
                           { close_date: { "$gte": startISO, "$lte": endISO } },
-                          { "$or": [{ stage: "Closed Won" }, { stage: "To Be Onboarded" }, { stage: "Live" }] },
+                            { "$or": [{ stage: "Closed Won" }, { stage: "To Be Onboarded" }] },
                                   ],
               },
               limit: 500,
