@@ -15,7 +15,7 @@ import { attioQuery, getVal } from "@/lib/attio";
 export const revalidate = 60;
 
 // Stages that count as churn (customer stopped paying)
-const CHURN_STAGES = ["Churned"];
+const CHURN_STAGES = ["Closed Lost"];
 
 // The Attio attribute slug for the onboarding date
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
@@ -114,13 +114,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter churn deals by close_date in this month
+    // Filter churn deals by onboarding_date in this month (same as Closed Won filter)
     const churnDealsInMonth = churnDeals.filter((deal: any) => {
-      const closeDate = getVal(deal, "close_date")
-        || getVal(deal, "closed_date")
-        || getVal(deal, "expected_close_date");
-      if (!closeDate) return false;
-      const d = String(closeDate).slice(0, 10);
+      const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
+      if (!onboardDate) return false;
+      const d = String(onboardDate).slice(0, 10);
       return d >= startISO && d <= endISO;
     });
     console.log(`Exec API: ${churnDeals.length} total churn deals, ${churnDealsInMonth.length} in month`);
