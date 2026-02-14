@@ -147,11 +147,20 @@ export function calcBDRCommission(netMeetings: number) {
 export const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
 
-// ─── Date Helpers (fixes hardcoded month issue) ─────────────────────────────
-export function getCurrentMonthRange() {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59));
+// -- Date Helpers (fixes hardcoded month issue) ——————————————————————————————
+export function getCurrentMonthRange(monthParam?: string) {
+  let year: number, month: number;
+  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+    const [y, m] = monthParam.split("-").map(Number);
+    year = y;
+    month = m - 1; // JS months are 0-indexed
+  } else {
+    const now = new Date();
+    year = now.getUTCFullYear();
+    month = now.getUTCMonth();
+  }
+  const start = new Date(Date.UTC(year, month, 1));
+  const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59));
   return {
     startISO: start.toISOString().split("T")[0],
     endISO: end.toISOString().split("T")[0],
