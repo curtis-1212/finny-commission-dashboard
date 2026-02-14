@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
     const OWNER_MAP = buildOwnerMap();
     const activeAEs = getActiveAEs(selectedMonthStr);
     console.log(`Exec API: querying ${monthLabel} (${startISO} -> ${endISO}), ${activeAEs.length} active AEs`);
+    console.log(`Exec API: OWNER_MAP: ${JSON.stringify(Object.entries(OWNER_MAP))}`);
 
     // --- Query Closed Won deals ---
     let allDeals: any[] = [];
@@ -68,17 +69,29 @@ export async function GET(request: NextRequest) {
     }
     console.log(`Exec API: got ${allDeals.length} Closed Won deals total`);
 
-    // Filter by onboarding_date in this month (commission only counts when customer onboards)
+    // Debug: log sample deal attributes
+    if (allDeals.length > 0) {
+      const sample = allDeals[0];
+      const attrs = sample?.values ? Object.keys(sample.values) : [];
+      console.log(`Exec API: sample deal attrs: ${attrs.slice(0, 25).join(", ")}`);
+      const onbVal = getVal(sample, ONBOARDING_DATE_ATTR);
+      const closeVal = getVal(sample, "close_date");
+      const ownerVal = getVal(sample, "owner");
+      console.log(`Exec API: sample - onboard: ${onbVal}, close: ${closeVal}, owner: ${ownerVal}`);
+    }
+
+    // Filter by onboarding_date ONLY (strict - no fallback to close_date)
     const deals = allDeals.filter((deal: any) => {
-      const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR)
-        || getVal(deal, "close_date")
-        || getVal(deal, "closed_date")
-        || getVal(deal, "expected_close_date");
+      const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
       if (!onboardDate) return false;
       const d = String(onboardDate).slice(0, 10);
       return d >= startISO && d <= endISO;
     });
-    console.log(`Exec API: ${deals.length} deals after date filter`);
+    console.log(`Exec API: ${deals.length} deals after onboarding date filter (strict)`);
+
+    // Count deals without onboarding date
+    const noOnboardDate = allDeals.filter((d: any) => !getVal(d, ONBOARDING_DATE_ATTR)).length;
+    console.log(`Exec API: ${noOnboardDate} deals have NO onboarding date`);
 
     // --- Query churned deals in this month ---
     let churnDeals: any[] = [];
@@ -202,7 +215,7 @@ export async function GET(request: NextRequest) {
         ae: aeResults, bdr: bdrResult,
         meta: {
           fetchedAt: new Date().toISOString(),
-          dealCount: deals.length, monthLabel, selectedMonth,warning,
+          dealCount: deals.length, monthLabel, selectedMonth, warning,
         },
         availableMonths: getAvailableMonths(), mode: "live",
       },
