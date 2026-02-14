@@ -14,7 +14,7 @@ import { attioQuery, getVal } from "@/lib/attio";
 export const revalidate = 60;
 
 // Commissionable stages: count toward quota
-const COMMISSIONABLE_STAGES = ["Closed Won", "To Be Onboarded", "Live"];
+const COMMISSIONABLE_STAGES = ["Closed Won", "To Be Onboarded"];
 
 // Helper: build Attio $or filter for stages
 function stageOr(stages: string[]) {
