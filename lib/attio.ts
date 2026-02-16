@@ -47,6 +47,8 @@ const TOKEN_MAP: Record<string, string | undefined> = {
   jason: process.env.TOKEN_JASON,
   max: process.env.TOKEN_MAX,
   exec: process.env.TOKEN_EXEC,
+  austin: process.env.TOKEN_AUSTIN,
+  roy: process.env.TOKEN_ROY,
 };
 
 export function validateToken(role: string, token: string | null): boolean {
