@@ -199,7 +199,7 @@ export function getCurrentMonthRange() {
 
 export function getMonthRange(year: number, month: number) {
     const start = new Date(Date.UTC(year, month - 1, 1));
-    const end = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+    const end = new Date(Date.UTC(year, month, 1));
     return {
           startISO: start.toISOString().split("T")[0],
           endISO: end.toISOString().split("T")[0],
