@@ -18,6 +18,7 @@ interface BDRMetrics {
   commission: number; introCallsScheduled: number;
 }
 interface MonthOption { value: string; label: string }
+interface LeaderboardEntry { id: string; name: string; initials: string; color: string; netARR: number; }
 
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtPct = (n: number) => (n * 100).toFixed(0) + "%";
@@ -113,6 +114,7 @@ export default function RepDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [anim, setAnim] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -121,6 +123,7 @@ export default function RepDashboard() {
       const data = await res.json();
       setRep(data.rep); setMetrics(data.metrics); setMonthLabel(data.meta?.monthLabel || "");
       if (data.availableMonths) setAvailableMonths(data.availableMonths);
+        if (data.leaderboard) setLeaderboard(data.leaderboard);
       setError("");
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }, [repId, token, selectedMonth]);
@@ -341,6 +344,46 @@ export default function RepDashboard() {
             <div style={{ fontSize: 14, color: B.muted, fontFamily: F.body, marginTop: 16, lineHeight: 1.4 }}>
               <strong style={{ color: B.text, fontWeight: 700 }}>{dLeft}</strong> selling days left in {monthLabel || getMonthName()}
             </div>
+          </div>
+        )}
+
+
+        {/* ─── AE Leaderboard ─── */}
+        {leaderboard.length > 0 && rep?.type === "ae" && (
+          <div style={{ marginTop: 32, padding: "20px 24px", background: B.card, borderRadius: 14, border: `1px solid ${B.border}` }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: B.muted, fontFamily: F.heading, letterSpacing: "0.04em", marginBottom: 16, textTransform: "uppercase" as const }}>
+              AE Leaderboard — New ARR
+            </div>
+            {leaderboard.map((entry, idx) => {
+              const isMe = entry.id === rep?.id;
+              return (
+                <div key={entry.id} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 12px", borderRadius: 8,
+                  background: isMe ? `${B.accent}12` : "transparent",
+                  borderBottom: idx < leaderboard.length - 1 ? `1px solid ${B.border}` : "none",
+                }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 6,
+                    background: `#${entry.color}20`, border: `1px solid #${entry.color}35`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.heading,
+                  }}>{idx + 1}</div>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 7,
+                    background: `#${entry.color}18`, border: `1px solid #${entry.color}30`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.heading,
+                  }}>{entry.initials}</div>
+                  <div style={{ flex: 1, fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? B.accent : B.text, fontFamily: F.body }}>
+                    {entry.name}{isMe ? " (You)" : ""}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: isMe ? B.accent : B.text, fontFamily: F.mono }}>
+                    {"$" + Math.round(entry.netARR).toLocaleString("en-US")}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
