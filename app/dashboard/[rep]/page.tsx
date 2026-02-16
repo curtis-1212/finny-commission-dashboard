@@ -351,7 +351,7 @@ export default function RepDashboard() {
         {/* ─── AE Leaderboard ─── */}
         {leaderboard.length > 0 && rep?.type === "ae" && (
           <div style={{ marginTop: 32, padding: "20px 24px", background: B.card, borderRadius: 14, border: `1px solid ${B.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: B.muted, fontFamily: F.heading, letterSpacing: "0.04em", marginBottom: 16, textTransform: "uppercase" as const }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: B.muted, fontFamily: F.display, letterSpacing: "0.04em", marginBottom: 16, textTransform: "uppercase" as const }}>
               AE Leaderboard — New ARR
             </div>
             {leaderboard.map((entry, idx) => {
@@ -367,13 +367,13 @@ export default function RepDashboard() {
                     width: 24, height: 24, borderRadius: 6,
                     background: `#${entry.color}20`, border: `1px solid #${entry.color}35`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.heading,
+                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.display,
                   }}>{idx + 1}</div>
                   <div style={{
                     width: 28, height: 28, borderRadius: 7,
                     background: `#${entry.color}18`, border: `1px solid #${entry.color}30`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.heading,
+                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.display,
                   }}>{entry.initials}</div>
                   <div style={{ flex: 1, fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? B.accent : B.text, fontFamily: F.body }}>
                     {entry.name}{isMe ? " (You)" : ""}
