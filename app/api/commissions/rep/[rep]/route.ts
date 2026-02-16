@@ -8,6 +8,7 @@ import {
   parseMonthParam,
   getAvailableMonths,
   buildOwnerMap,
+  getActiveAEs,
 } from "@/lib/commission-config";
 import { attioQuery, getVal, validateToken } from "@/lib/attio";
 
@@ -45,7 +46,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const validReps = ["jason", "kelcy", "max"];
+  const validReps = ["jason", "kelcy", "max", "austin", "roy"];
   if (!validReps.includes(repId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -213,6 +214,38 @@ export async function GET(
       ae.monthlyQuota, ae.tiers, netARR
     );
 
+
+
+    // ── Leaderboard: compute netARR for all active AEs ──
+    const activeAEs = getActiveAEs(selectedMonth);
+    const leaderboard = activeAEs.map(lbAe => {
+      let lbGross = 0, lbChurn = 0;
+      for (const deal of deals) {
+        const ownerUUID = getVal(deal, "owner");
+        if (OWNER_MAP[ownerUUID] !== lbAe.id) continue;
+        const value = getVal(deal, "value") || 0;
+        const stage = getVal(deal, "stage");
+        const people = getVal(deal, "associated_people");
+        const isChurned = churnedSet.size > 0 &&
+          Array.isArray(people) &&
+          people.some((pid: string) => churnedSet.has(pid));
+
+        if (INTRO_CALL_STAGES.includes(stage)) continue;
+        if (CLOSED_LOST_STAGES.includes(stage)) continue;
+
+        lbGross += value;
+        if (isChurned) lbChurn += value;
+      }
+      const lbNet = lbGross - lbChurn;
+      return {
+        id: lbAe.id,
+        name: lbAe.name,
+        initials: lbAe.initials,
+        color: lbAe.color,
+        netARR: lbNet,
+      };
+    }).sort((a, b) => b.netARR - a.netARR);
+
     return NextResponse.json({
       rep: {
         id: ae.id, name: ae.name, role: ae.role,
@@ -237,6 +270,7 @@ export async function GET(
         dealCount: totalDealCount,
         excludedCount: churnedCount,
       },
+      leaderboard,
       meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
       availableMonths: getAvailableMonths(),
     });
