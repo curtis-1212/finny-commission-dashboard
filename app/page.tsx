@@ -7,6 +7,7 @@ interface AEResult {
   monthlyQuota: number; annualQuota: number;
   grossARR?: number; churnARR?: number; netARR?: number;
   dealCount?: number; excludedCount?: number;
+  demoCount?: number;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
 }
@@ -113,9 +114,10 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type }: {
+function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount }: {
   name: string; initials: string; actual: number; quota: number;
   att: number; commission: number; churn: number; deals: number; type: string;
+  demoCount?: number; excludedCount?: number;
 }) {
   const pct = Math.min(att, 1.5);
   const barColor = att >= 1.0
@@ -179,6 +181,30 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Target" : "Deals"}</div>
             <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
           </div>
+
+
+          {/* CW Rate */}
+          {!isBDR && (
+            <div style={{ flex: 0.7, textAlign: "right" as const }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>CW RATE</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
+                {demoCount && demoCount > 0 ? fmtPct0(deals / demoCount) : "—"}
+              </div>
+            </div>
+          )}
+
+          {/* Churns # */}
+          {!isBDR && (
+            <div style={{ flex: 0.5, textAlign: "right" as const }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>CHURNS</div>
+              <div style={{
+                fontSize: 15, fontWeight: 600, fontFamily: F.m,
+                color: excludedCount && excludedCount > 0 ? C.danger : C.textGhost,
+              }}>
+                {excludedCount && excludedCount > 0 ? excludedCount : "—"}
+              </div>
+            </div>
+          )}
 
           {/* Churn */}
           {!isBDR && (
@@ -492,6 +518,8 @@ export default function ExecDashboard() {
                 commission={ae.commission || 0}
                 churn={ae.churnARR || 0}
                 deals={ae.dealCount || 0}
+                demoCount={ae.demoCount || 0}
+                excludedCount={ae.excludedCount || 0}
                 type="ae"
               />
             ))}
