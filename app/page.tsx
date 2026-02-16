@@ -8,6 +8,7 @@ interface AEResult {
   grossARR?: number; churnARR?: number; netARR?: number;
   dealCount?: number; excludedCount?: number;
   demoCount?: number;
+    cwRate?: number | null;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
 }
@@ -114,10 +115,10 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount }: {
+function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount, cwRate }: {
   name: string; initials: string; actual: number; quota: number;
   att: number; commission: number; churn: number; deals: number; type: string;
-  demoCount?: number; excludedCount?: number;
+  demoCount?: number; excludedCount?: number; cwRate?: number | null;
 }) {
   const pct = Math.min(att, 1.5);
   const barColor = att >= 1.0
@@ -188,7 +189,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
             <div style={{ flex: 0.7, textAlign: "right" as const }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>CW RATE</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
-                {demoCount && demoCount > 0 ? fmtPct0(deals / demoCount) : "—"}
+                {cwRate != null ? fmtPct0(cwRate) : "—"}
               </div>
             </div>
           )}
@@ -519,6 +520,7 @@ export default function ExecDashboard() {
                 churn={ae.churnARR || 0}
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
+                                    cwRate={ae.cwRate}
                 excludedCount={ae.excludedCount || 0}
                 type="ae"
               />
@@ -670,3 +672,4 @@ export default function ExecDashboard() {
     </div>
   );
 }
+
