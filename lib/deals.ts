@@ -69,7 +69,7 @@ export interface MonthData {
           id: string; name: string; role: string; initials: string; color: string;
           type: "ae"; monthlyQuota: number; annualQuota: number;
           grossARR: number; churnARR: number; netARR: number;
-          dealCount: number; churnCount: number; closedLostCount: number; closedLostARR: number;
+          dealCount: number; excludedCount: number; closedLostCount: number; closedLostARR: number;
           cwRate: number | null;
           attainment: number; commission: number;
           tierBreakdown: { label?: string; amount: number }[];
@@ -181,7 +181,7 @@ export async function fetchMonthData(
                                               type: "ae" as const,
                                               monthlyQuota: ae.monthlyQuota, annualQuota: ae.annualQuota,
                                               grossARR: a.grossARR, churnARR: a.churnARR, netARR: a.netARR,
-                                              dealCount: a.dealCount, churnCount: a.churnCount,
+                                              dealCount: a.dealCount, excludedCount: a.churnCount,
                                               closedLostCount: a.closedLostCount, closedLostARR: a.closedLostARR,
                                               cwRate,
                                               attainment, commission,
