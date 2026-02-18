@@ -59,7 +59,7 @@ export async function GET(
     const OWNER_MAP = buildOwnerMap();
     const { year, month } = parseMonthParam(monthParam);
     const { startISO, endISO, label: monthLabel } = getMonthRange(year, month);
-    const selectedMonth = \`\${year}-\${String(month).padStart(2, "0")}\`;
+    const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
 
     const closedWonAll = await fetchAllDeals({ stage: "Closed Won" });
     const closedLostAll = await fetchAllDeals({ stage: "Closed Lost" });

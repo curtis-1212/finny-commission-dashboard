@@ -6,7 +6,7 @@ interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
   grossARR?: number; churnARR?: number; netARR?: number;
-  dealCount?: number; excludedCount?: number;
+  dealCount?: number; churnCount?: number; excludedCount?: number;
   demoCount?: number;
     cwRate?: number | null;
   attainment?: number; commission?: number;
@@ -59,7 +59,7 @@ const fmtPct0 = (n: number) => (n * 100).toFixed(0) + "%";
 
 function getCurrentMonthValue() {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 // ─── Attainment color logic ─────────────────────────────────────────────────
@@ -521,7 +521,7 @@ export default function ExecDashboard() {
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
                                     cwRate={ae.cwRate}
-                excludedCount={ae.excludedCount || 0}
+                excludedCount={ae.churnCount ?? ae.excludedCount ?? 0}
                 type="ae"
               />
             ))}

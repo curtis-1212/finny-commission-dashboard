@@ -50,29 +50,22 @@ export function middleware(request: NextRequest) {
   if (pathname === "/") {
     role = "exec";
   } else if (pathname.startsWith("/dashboard/")) {
-    role = pathname.split("/")[2]; // e.g., "kelcy", "jason", "max"
+    role = pathname.split("/")[2];
   } else if (pathname.match(/^\/api\/commissions\/rep\//)) {
-    role = pathname.split("/")[4]; // /api/commissions/rep/[rep]
+    role = pathname.split("/")[4];
   } else {
-    role = "exec"; // Default: exec-level API access
+    role = "exec";
   }
 
-  // Validate — we do this server-side in the API routes too,
-  // but middleware provides the first gate + nice error pages
-  const expected =
-    role === "exec"
-      ? process.env.TOKEN_EXEC
-      : role === "kelcy"
-        ? process.env.TOKEN_KELCY
-        : role === "jason"
-          ? process.env.TOKEN_JASON
-          : role === "max"
-            ? process.env.TOKEN_MAX
-            : role === "austin"
-            ? process.env.TOKEN_AUSTIN
-            : role === "roy"
-            ? process.env.TOKEN_ROY
-            : undefined;
+  const TOKEN_MAP: Record<string, string | undefined> = {
+    exec: process.env.TOKEN_EXEC,
+    kelcy: process.env.TOKEN_KELCY,
+    jason: process.env.TOKEN_JASON,
+    max: process.env.TOKEN_MAX,
+    austin: process.env.TOKEN_AUSTIN,
+    roy: process.env.TOKEN_ROY,
+  };
+  const expected = TOKEN_MAP[role];
 
   if (!expected || token !== expected) {
     if (pathname.startsWith("/api/")) {

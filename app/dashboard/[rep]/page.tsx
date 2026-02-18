@@ -25,7 +25,7 @@ const fmtPct = (n: number) => (n * 100).toFixed(0) + "%";
 
 function getCurrentMonthValue() {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 // ─── FINNY Brand ────────────────────────────────────────────────────────────
@@ -365,15 +365,15 @@ export default function RepDashboard() {
                 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 6,
-                    background: `#${entry.color}20`, border: `1px solid #${entry.color}35`,
+                    background: `${entry.color}20`, border: `1px solid ${entry.color}35`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.display,
+                    fontSize: 10, fontWeight: 700, color: entry.color, fontFamily: F.display,
                   }}>{idx + 1}</div>
                   <div style={{
                     width: 28, height: 28, borderRadius: 7,
-                    background: `#${entry.color}18`, border: `1px solid #${entry.color}30`,
+                    background: `${entry.color}18`, border: `1px solid ${entry.color}30`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: `#${entry.color}`, fontFamily: F.display,
+                    fontSize: 10, fontWeight: 700, color: entry.color, fontFamily: F.display,
                   }}>{entry.initials}</div>
                   <div style={{ flex: 1, fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? B.accent : B.text, fontFamily: F.body }}>
                     {entry.name}{isMe ? " (You)" : ""}
