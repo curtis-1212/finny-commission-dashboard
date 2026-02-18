@@ -4,12 +4,12 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
+import { fetchChurnedRecordIdsFromUsersList, isChurnedDeal } from "@/lib/deals";
 import { attioQuery, getVal, validateToken } from "@/lib/attio";
 
 export const revalidate = 60;
 
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
-const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 const PAGE_SIZE = 500;
 
 function getDealDate(deal: any): string | null {
@@ -18,14 +18,6 @@ function getDealDate(deal: any): string | null {
   const dateToUse = onboardDate || closeDate;
   if (!dateToUse) return null;
   return String(dateToUse).slice(0, 10);
-}
-
-function isChurnedDeal(deal: any): boolean {
-  const churnVal = getVal(deal, CHURN_REQUEST_DATE_ATTR);
-  if (churnVal == null) return false;
-  if (typeof churnVal === "string") return churnVal.trim() !== "";
-  if (typeof churnVal === "object" && churnVal?.value != null) return true;
-  return true;
 }
 
 async function fetchAllDeals(filter: object): Promise<any[]> {
@@ -63,6 +55,8 @@ export async function GET(
     const { year, month } = parseMonthParam(monthParam);
     const { startISO, endISO, label: monthLabel } = getMonthRange(year, month);
     const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+    const churnedRecordIds = await fetchChurnedRecordIdsFromUsersList();
 
     const closedWonAll = await fetchAllDeals({ stage: "Closed Won" });
     const closedLostAll = await fetchAllDeals({ stage: "Closed Lost" });
@@ -106,7 +100,7 @@ export async function GET(
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       const value = getVal(deal, "value") || 0;
       grossARR += value;
-      if (isChurnedDeal(deal)) { churnedCount += 1; churnARR += value; }
+      if (isChurnedDeal(deal, churnedRecordIds)) { churnedCount += 1; churnARR += value; }
       else { closedWonCount += 1; closedWonARR += value; }
     }
 
@@ -129,7 +123,7 @@ export async function GET(
       for (const deal of wonInMonth) {
         if (OWNER_MAP[getVal(deal, "owner")] !== lbAe.id) continue;
         const v = getVal(deal, "value") || 0;
-        if (isChurnedDeal(deal)) lbChurn += v; else lbGross += v;
+        if (isChurnedDeal(deal, churnedRecordIds)) lbChurn += v; else lbGross += v;
       }
       return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbChurn };
     }).sort((a, b) => b.netARR - a.netARR);

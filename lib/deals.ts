@@ -1,7 +1,7 @@
 // SERVER-ONLY -- Shared Attio deal-fetching and aggregation logic.
 // Both the exec route and rep route call these functions so the numbers always match.
 
-import { attioQuery, getVal } from "@/lib/attio";
+import { attioQuery, attioListEntriesQuery, getVal, getEntryVal } from "@/lib/attio";
 import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
     calcAECommission, calcBDRCommission, BDR_DATA,
@@ -12,10 +12,14 @@ import {
 // The custom Attio attribute for onboarding date (primary date for commission)
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 
-// Churn = Closed Won customer who requested to cancel (subscription_cancel_request_date on deal).
+// Churn: from Users list (entry has subscription_cancel_request_date) or fallback to same attr on deal.
 const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
+// Users list slug in Attio (list containing customer records with subscription_cancel_request_date).
+const USERS_LIST_SLUG = process.env.ATTIO_USERS_LIST_SLUG ?? "users";
+const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_company";
 
 const PAGE_SIZE = 500;
+const LIST_PAGE_SIZE = 500;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,14 +44,46 @@ function getDealDate(deal: any): string | null {
     return String(dateToUse).slice(0, 10); // "YYYY-MM-DD"
 }
 
-/** Check if a deal is a churn (customer who cancelled in trial period) */
-function isChurnedDeal(deal: any): boolean {
+/** Check if value indicates churn (non-empty date). */
+function hasChurnDate(val: any): boolean {
+  if (val == null) return false;
+  if (typeof val === "string") return val.trim() !== "";
+  if (typeof val === "object" && val?.value != null) return true;
+  return true;
+}
+
+/** Fetch parent_record_ids from Users list where subscription_cancel_request_date is set. */
+export async function fetchChurnedRecordIdsFromUsersList(): Promise<Set<string>> {
+  const churnedIds = new Set<string>();
+  if (!USERS_LIST_SLUG) return churnedIds;
+
+  let offset = 0;
+  while (true) {
+    const page = await attioListEntriesQuery(USERS_LIST_SLUG, {
+      limit: LIST_PAGE_SIZE,
+      offset,
+    });
+    const entries = page?.data ?? [];
+    for (const entry of entries) {
+      const churnVal = getEntryVal(entry, CHURN_REQUEST_DATE_ATTR);
+      if (hasChurnDate(churnVal) && entry.parent_record_id) {
+        churnedIds.add(String(entry.parent_record_id));
+      }
+    }
+    if (entries.length < LIST_PAGE_SIZE) break;
+    offset += LIST_PAGE_SIZE;
+  }
+  return churnedIds;
+}
+
+/** Deal is churned if linked record (e.g. company) is in churned set, or deal has churn date when not using list. */
+export function isChurnedDeal(deal: any, churnedRecordIds: Set<string>): boolean {
+  if (churnedRecordIds.size > 0) {
+    const linkedId = getVal(deal, DEAL_PARENT_ATTR);
+    if (linkedId && churnedRecordIds.has(String(linkedId))) return true;
+  }
   const churnVal = getVal(deal, CHURN_REQUEST_DATE_ATTR);
-  if (churnVal == null) return false;
-  if (typeof churnVal === "string") return churnVal.trim() !== "";
-  // Attio may return { value: "YYYY-MM-DD" } for date attributes
-  if (typeof churnVal === "object" && churnVal?.value != null) return true;
-  return true; // any other truthy value (e.g. object) = has churn date
+  return hasChurnDate(churnVal);
 }
 
 // ─── Paginated Attio query ──────────────────────────────────────────────────
@@ -96,7 +132,9 @@ export async function fetchMonthData(
     selectedMonthStr: string,
   ): Promise<MonthData> {
     const OWNER_MAP = buildOwnerMap();
-    const activeAEs = getActiveAEs(selectedMonthStr);
+  const activeAEs = getActiveAEs(selectedMonthStr);
+
+  const churnedRecordIds = await fetchChurnedRecordIdsFromUsersList();
 
   const closedWonDeals = await fetchAllDeals({ stage: "Closed Won" });
   const wonInMonth = closedWonDeals.filter((deal: any) => {
@@ -126,7 +164,7 @@ export async function fetchMonthData(
     const aeId = OWNER_MAP[ownerUUID];
     if (!aeId || !agg[aeId]) continue;
     const value = getVal(deal, "value") || 0;
-    const churned = isChurnedDeal(deal);
+    const churned = isChurnedDeal(deal, churnedRecordIds);
     agg[aeId].grossARR += value;
     if (churned) {
       agg[aeId].churnARR += value;
