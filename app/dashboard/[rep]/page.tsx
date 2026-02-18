@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import LogoutButton from "@/components/LogoutButton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
@@ -118,8 +119,13 @@ export default function RepDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/commissions/rep/${repId}?token=${token}&month=${selectedMonth}`);
-      if (!res.ok) { throw new Error(res.status === 401 ? "unauthorized" : "load_failed"); }
+      const tokenParam = token ? `token=${token}&` : "";
+      const res = await fetch(`/api/commissions/rep/${repId}?${tokenParam}month=${selectedMonth}`);
+      if (res.status === 401 || res.status === 403) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) { throw new Error("load_failed"); }
       const data = await res.json();
       setRep(data.rep); setMetrics(data.metrics); setMonthLabel(data.meta?.monthLabel || "");
       if (data.availableMonths) setAvailableMonths(data.availableMonths);
@@ -206,6 +212,7 @@ export default function RepDashboard() {
             ) : (
               <span style={{ fontSize: 12, fontWeight: 500, color: B.muted, fontFamily: F.body }}>{monthLabel || getMonthName()}</span>
             )}
+            {!token && <LogoutButton variant="light" />}
           </div>
         </div>
 

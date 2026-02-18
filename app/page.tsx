@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import LogoutButton from "@/components/LogoutButton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface AEResult {
@@ -279,13 +280,23 @@ export default function ExecDashboard() {
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
 
   const [token, setToken] = useState("");
-  useEffect(() => { setToken(new URLSearchParams(window.location.search).get("token") || ""); }, []);
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("token") || "";
+    setToken(t);
+    if (!t) setHasSession(true); // No token means user authenticated via Supabase session
+  }, []);
 
   const fetchLive = useCallback(async () => {
-    if (!token) return;
+    if (!token && !hasSession) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/commissions?live=true&month=${selectedMonth}&token=${token}`);
+      const tokenParam = token ? `&token=${token}` : "";
+      const res = await fetch(`/api/commissions?live=true&month=${selectedMonth}${tokenParam}`);
+      if (res.status === 401 || res.status === 403) {
+        window.location.href = "/login";
+        return;
+      }
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setAeResults(data.ae || []);
@@ -295,7 +306,7 @@ export default function ExecDashboard() {
       setWarning(data.meta?.warning || "");
       if (data.availableMonths) setAvailableMonths(data.availableMonths);
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
-  }, [token, selectedMonth]);
+  }, [token, hasSession, selectedMonth]);
 
   useEffect(() => { if (isLive) fetchLive(); }, [isLive, fetchLive]);
   useEffect(() => { if (!isLive) return; const i = setInterval(fetchLive, 60000); return () => clearInterval(i); }, [isLive, fetchLive]);
@@ -379,6 +390,7 @@ export default function ExecDashboard() {
                 }} />
                 {loading ? "Loading…" : isLive ? "LIVE" : "CONNECT"}
               </button>
+              {!token && <LogoutButton variant="dark" />}
             </div>
           </div>
         </div>

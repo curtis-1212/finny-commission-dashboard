@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/middleware";
 
-// Routes that require token authentication
+// Routes that require authentication
 const PROTECTED_PATTERNS = [
   /^\/$/, // Exec dashboard
   /^\/dashboard\//, // Individual rep dashboards
@@ -10,42 +11,20 @@ const PROTECTED_PATTERNS = [
 // Routes that use their own auth (cron secret)
 const SELF_AUTH_PATTERNS = [/^\/api\/cron\//];
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+// Public routes (no auth needed)
+const PUBLIC_PATTERNS = [/^\/login$/, /^\/api\/auth\//];
 
-  // Skip auth for self-authenticated routes
-  if (SELF_AUTH_PATTERNS.some((p) => p.test(pathname))) {
-    return NextResponse.next();
-  }
+// Legacy token map (kept for backward compat, cron jobs, API access)
+const TOKEN_MAP: Record<string, string | undefined> = {
+  exec: process.env.TOKEN_EXEC,
+  kelcy: process.env.TOKEN_KELCY,
+  jason: process.env.TOKEN_JASON,
+  max: process.env.TOKEN_MAX,
+  austin: process.env.TOKEN_AUSTIN,
+  roy: process.env.TOKEN_ROY,
+};
 
-  // Check if route needs protection
-  const isProtected = PROTECTED_PATTERNS.some((p) => p.test(pathname));
-  if (!isProtected) return NextResponse.next();
-
-  // Extract token from query param or Authorization header
-  const token =
-    request.nextUrl.searchParams.get("token") ||
-    request.headers.get("authorization")?.replace("Bearer ", "") ||
-    null;
-
-  if (!token) {
-    // For API routes, return JSON 401
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    // For pages, return a minimal HTML 401
-    return new NextResponse(
-      `<!DOCTYPE html><html><head><title>Access Denied</title>
-       <style>body{background:#0B1120;color:#64748B;font-family:system-ui;display:flex;
-       align-items:center;justify-content:center;height:100vh;margin:0}
-       div{text-align:center}h1{color:#CBD5E1;font-size:20px;font-weight:500}
-       p{font-size:14px;margin-top:8px}</style></head>
-       <body><div><h1>Access Denied</h1><p>Valid token required.</p></div></body></html>`,
-      { status: 401, headers: { "Content-Type": "text/html" } }
-    );
-  }
-
-  // Determine which token to validate against based on route
+function validateLegacyToken(pathname: string, token: string): boolean {
   let role: string;
   if (pathname === "/") {
     role = "exec";
@@ -56,39 +35,76 @@ export function middleware(request: NextRequest) {
   } else {
     role = "exec";
   }
-
-  const TOKEN_MAP: Record<string, string | undefined> = {
-    exec: process.env.TOKEN_EXEC,
-    kelcy: process.env.TOKEN_KELCY,
-    jason: process.env.TOKEN_JASON,
-    max: process.env.TOKEN_MAX,
-    austin: process.env.TOKEN_AUSTIN,
-    roy: process.env.TOKEN_ROY,
-  };
   const expected = TOKEN_MAP[role];
+  if (!expected || expected.length !== token.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= expected.charCodeAt(i) ^ token.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
 
-  if (!expected || token !== expected) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return new NextResponse(
-      `<!DOCTYPE html><html><head><title>Access Denied</title>
-       <style>body{background:#0B1120;color:#64748B;font-family:system-ui;display:flex;
-       align-items:center;justify-content:center;height:100vh;margin:0}
-       div{text-align:center}h1{color:#CBD5E1;font-size:20px;font-weight:500}
-       p{font-size:14px;margin-top:8px}</style></head>
-       <body><div><h1>Access Denied</h1><p>Invalid or expired token.</p></div></body></html>`,
-      { status: 401, headers: { "Content-Type": "text/html" } }
-    );
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Skip self-authenticated routes (cron)
+  if (SELF_AUTH_PATTERNS.some((p) => p.test(pathname))) {
+    return NextResponse.next();
   }
 
-  return NextResponse.next();
+  // Handle public routes
+  if (PUBLIC_PATTERNS.some((p) => p.test(pathname))) {
+    // If user is already logged in and hits /login, redirect to home
+    if (pathname === "/login") {
+      const { supabase, response } = createClient(request);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+      return response;
+    }
+    return NextResponse.next();
+  }
+
+  // Check if route needs protection
+  const isProtected = PROTECTED_PATTERNS.some((p) => p.test(pathname));
+  if (!isProtected) return NextResponse.next();
+
+  // --- AUTH CHECK 1: Legacy token (query param or Bearer header) ---
+  const token =
+    request.nextUrl.searchParams.get("token") ||
+    request.headers.get("authorization")?.replace("Bearer ", "") ||
+    null;
+
+  if (token && validateLegacyToken(pathname, token)) {
+    return NextResponse.next();
+  }
+
+  // --- AUTH CHECK 2: Supabase session (cookie-based) ---
+  const { supabase, response } = createClient(request);
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (user) {
+    return response;
+  }
+
+  // --- Neither auth method succeeded ---
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Redirect unauthenticated page requests to login
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("redirect", pathname);
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
   matcher: [
     "/",
+    "/login",
     "/dashboard/:path*",
     "/api/commissions/:path*",
+    "/api/auth/:path*",
   ],
 };

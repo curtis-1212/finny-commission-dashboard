@@ -4,10 +4,16 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
+import { getAuth } from "@/lib/auth";
 
 export const revalidate = 60;
 
 export async function GET(request: NextRequest) {
+  const auth = await getAuth(request);
+  if (!auth.authenticated || auth.role !== "exec") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const useLive = request.nextUrl.searchParams.get("live") === "true";
   const monthParam = request.nextUrl.searchParams.get("month");
 

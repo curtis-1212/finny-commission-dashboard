@@ -4,7 +4,8 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { attioQuery, getVal, validateToken } from "@/lib/attio";
+import { attioQuery, getVal } from "@/lib/attio";
+import { getAuth } from "@/lib/auth";
 
 export const revalidate = 60;
 
@@ -46,11 +47,15 @@ export async function GET(
   { params }: { params: { rep: string } }
 ) {
   const repId = params.rep;
-  const token = request.nextUrl.searchParams.get("token");
   const monthParam = request.nextUrl.searchParams.get("month");
 
-  if (!validateToken(repId, token)) {
+  const auth = await getAuth(request);
+  if (!auth.authenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Execs can view any rep; reps can only view their own
+  if (auth.role !== "exec" && auth.repId !== repId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const validReps = ["jason", "kelcy", "max", "austin", "roy"];
