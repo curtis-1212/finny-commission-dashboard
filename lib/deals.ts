@@ -12,9 +12,8 @@ import {
 // The custom Attio attribute for onboarding date (primary date for commission)
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 
-// Churn = Closed Won customer who requested to cancel within 14-day trial.
-// Identified by a non-empty "churn_request_date" on the deal.
-const CHURN_REQUEST_DATE_ATTR = "churn_request_date";
+// Churn = Closed Won customer who requested to cancel (subscription_cancel_request_date on deal).
+const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 
 const PAGE_SIZE = 500;
 
@@ -43,8 +42,12 @@ function getDealDate(deal: any): string | null {
 
 /** Check if a deal is a churn (customer who cancelled in trial period) */
 function isChurnedDeal(deal: any): boolean {
-    const churnDate = getVal(deal, CHURN_REQUEST_DATE_ATTR);
-    return churnDate != null && churnDate !== "";
+  const churnVal = getVal(deal, CHURN_REQUEST_DATE_ATTR);
+  if (churnVal == null) return false;
+  if (typeof churnVal === "string") return churnVal.trim() !== "";
+  // Attio may return { value: "YYYY-MM-DD" } for date attributes
+  if (typeof churnVal === "object" && churnVal?.value != null) return true;
+  return true; // any other truthy value (e.g. object) = has churn date
 }
 
 // ─── Paginated Attio query ──────────────────────────────────────────────────

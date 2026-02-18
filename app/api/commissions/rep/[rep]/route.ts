@@ -9,7 +9,7 @@ import { attioQuery, getVal, validateToken } from "@/lib/attio";
 export const revalidate = 60;
 
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
-const CHURN_REQUEST_DATE_ATTR = "churn_request_date";
+const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 const PAGE_SIZE = 500;
 
 function getDealDate(deal: any): string | null {
@@ -21,8 +21,11 @@ function getDealDate(deal: any): string | null {
 }
 
 function isChurnedDeal(deal: any): boolean {
-  const churnDate = getVal(deal, CHURN_REQUEST_DATE_ATTR);
-  return churnDate != null && churnDate !== "";
+  const churnVal = getVal(deal, CHURN_REQUEST_DATE_ATTR);
+  if (churnVal == null) return false;
+  if (typeof churnVal === "string") return churnVal.trim() !== "";
+  if (typeof churnVal === "object" && churnVal?.value != null) return true;
+  return true;
 }
 
 async function fetchAllDeals(filter: object): Promise<any[]> {
