@@ -9,9 +9,6 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-// The custom Attio attribute for onboarding date (primary date for commission)
-const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
-
 // Churn = Closed Won customer who requested to cancel (subscription_cancel_request_date on deal).
 const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 
@@ -31,11 +28,10 @@ export interface AERollup {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Extract the commission-relevant date from a deal (onboarding_date, fallback to close_date) */
+/** Extract the commission-relevant date from a deal (close_date — the month the deal was moved to Closed Won) */
 function getDealDate(deal: any): string | null {
-    const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
     const closeDate = getVal(deal, "close_date");
-    const dateToUse = onboardDate || closeDate;
+    const dateToUse = closeDate;
     if (!dateToUse) return null;
     return String(dateToUse).slice(0, 10); // "YYYY-MM-DD"
 }
