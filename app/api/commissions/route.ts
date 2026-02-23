@@ -5,7 +5,7 @@ import {
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
 
-export const revalidate = 60;
+export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window
 
 export async function GET(request: NextRequest) {
   const useLive = request.nextUrl.searchParams.get("live") === "true";
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         availableMonths: getAvailableMonths(),
         mode: "live",
       },
-      { headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" } },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (err: any) {
     console.error("Exec API error:", err);
