@@ -5,19 +5,16 @@ import {
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
 import { fetchChurnedRecordIdsFromUsersList, isChurnedDeal } from "@/lib/deals";
-import { attioQuery, getVal, validateToken } from "@/lib/attio";
+import { attioQuery, getVal } from "@/lib/attio";
 
 export const revalidate = 0;
 
-const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 const PAGE_SIZE = 500;
 
 function getDealDate(deal: any): string | null {
-  const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
   const closeDate = getVal(deal, "close_date");
-  const dateToUse = onboardDate || closeDate;
-  if (!dateToUse) return null;
-  return String(dateToUse).slice(0, 10);
+  if (!closeDate) return null;
+  return String(closeDate).slice(0, 10);
 }
 
 async function fetchAllDeals(filter: object): Promise<any[]> {
@@ -38,12 +35,7 @@ export async function GET(
   { params }: { params: { rep: string } }
 ) {
   const repId = params.rep;
-  const token = request.nextUrl.searchParams.get("token");
   const monthParam = request.nextUrl.searchParams.get("month");
-
-  if (!validateToken(repId, token)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   const validReps = ["jason", "kelcy", "max", "austin", "roy"];
   if (!validReps.includes(repId)) {
