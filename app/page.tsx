@@ -194,28 +194,15 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
             </div>
           )}
 
-          {/* Churns # */}
+          {/* Churned Users */}
           {!isBDR && (
-            <div style={{ flex: 0.5, textAlign: "right" as const }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>CHURNS</div>
+            <div style={{ flex: 0.8, textAlign: "right" as const }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Churned Users</div>
               <div style={{
                 fontSize: 15, fontWeight: 600, fontFamily: F.m,
                 color: excludedCount && excludedCount > 0 ? C.danger : C.textGhost,
               }}>
                 {excludedCount && excludedCount > 0 ? excludedCount : "—"}
-              </div>
-            </div>
-          )}
-
-          {/* Churn */}
-          {!isBDR && (
-            <div style={{ flex: 0.8, textAlign: "right" as const }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Churn</div>
-              <div style={{
-                fontSize: 15, fontWeight: 600, fontFamily: F.m,
-                color: churn > 0 ? C.danger : C.textGhost,
-              }}>
-                {churn > 0 ? `-${fmtK(churn)}` : "—"}
               </div>
             </div>
           )}
@@ -300,6 +287,7 @@ export default function ExecDashboard() {
   const totalNetARR = aeResults.reduce((s, r) => s + (r.netARR || 0), 0);
   const totalGrossARR = aeResults.reduce((s, r) => s + (r.grossARR || 0), 0);
   const totalChurnARR = aeResults.reduce((s, r) => s + (r.churnARR || 0), 0);
+    const totalChurnCount = aeResults.reduce((s, r) => s + (r.churnCount || 0), 0);
   const totalQuota = aeResults.reduce((s, r) => s + r.monthlyQuota, 0);
   const totalDeals = aeResults.reduce((s, r) => s + (r.dealCount || 0), 0);
   const teamAttainment = totalQuota > 0 ? totalNetARR / totalQuota : 0;
@@ -411,7 +399,7 @@ export default function ExecDashboard() {
             </div>
             <div style={{ padding: "0 20px" }}>
               <KPI label="Gross Churn" value={fmtPct(churnRate)}
-                sub={totalChurnARR > 0 ? fmtK(totalChurnARR) : "Clean"} large />
+                sub={totalChurnCount > 0 ? `${totalChurnCount} users \u00B7 ${fmtK(totalChurnARR)}` : "Clean"} large />
             </div>
             <div style={{ padding: "0 20px", borderRight: "none" }}>
               <KPI label="Deals Closed" value={String(totalDeals)} large />
