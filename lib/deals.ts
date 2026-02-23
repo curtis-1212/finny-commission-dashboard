@@ -213,7 +213,7 @@ export async function fetchMonthData(
         resolved: getVal(sample, DEAL_PARENT_ATTR),
         deal_attr_keys: Object.keys(sample?.values ?? {}).slice(0, 25),
         churned_set_size: churnedRecordIds.size,
-        churned_sample: [...churnedRecordIds].slice(0, 3),
+        churned_sample: Array.from(churnedRecordIds).slice(0, 3),
       }),
     );
   }
