@@ -8,16 +8,13 @@ import { attioQuery, getVal } from "@/lib/attio";
 
 export const revalidate = 60;
 
-const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 const PAGE_SIZE = 500;
 
 function getDealDate(deal: any): string | null {
-  const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
   const closeDate = getVal(deal, "close_date");
-  const dateToUse = onboardDate || closeDate;
-  if (!dateToUse) return null;
-  return String(dateToUse).slice(0, 10);
+  if (!closeDate) return null;
+  return String(closeDate).slice(0, 10);
 }
 
 function isChurnedDeal(deal: any): boolean {
