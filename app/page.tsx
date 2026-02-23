@@ -278,14 +278,10 @@ export default function ExecDashboard() {
   const [aeResults, setAeResults] = useState<AEResult[]>([]);
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
 
-  const [token, setToken] = useState("");
-  useEffect(() => { setToken(new URLSearchParams(window.location.search).get("token") || ""); }, []);
-
   const fetchLive = useCallback(async () => {
-    if (!token) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/commissions?live=true&month=${selectedMonth}&token=${token}`);
+      const res = await fetch(`/api/commissions?live=true&month=${selectedMonth}`);
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setAeResults(data.ae || []);
@@ -295,7 +291,7 @@ export default function ExecDashboard() {
       setWarning(data.meta?.warning || "");
       if (data.availableMonths) setAvailableMonths(data.availableMonths);
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
-  }, [token, selectedMonth]);
+  }, [selectedMonth]);
 
   useEffect(() => { if (isLive) fetchLive(); }, [isLive, fetchLive]);
   useEffect(() => { if (!isLive) return; const i = setInterval(fetchLive, 60000); return () => clearInterval(i); }, [isLive, fetchLive]);
