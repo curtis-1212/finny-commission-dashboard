@@ -4,7 +4,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { attioQuery, getVal, validateToken } from "@/lib/attio";
+import { attioQuery, getVal } from "@/lib/attio";
 
 export const revalidate = 60;
 
@@ -46,12 +46,7 @@ export async function GET(
   { params }: { params: { rep: string } }
 ) {
   const repId = params.rep;
-  const token = request.nextUrl.searchParams.get("token");
   const monthParam = request.nextUrl.searchParams.get("month");
-
-  if (!validateToken(repId, token)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   const validReps = ["jason", "kelcy", "max", "austin", "roy"];
   if (!validReps.includes(repId)) {
