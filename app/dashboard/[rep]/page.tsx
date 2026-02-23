@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
@@ -102,9 +102,7 @@ function PRow({ icon, label, count, arr, hl, neg }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function RepDashboard() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const repId = params.rep as string;
-  const token = searchParams.get("token") || "";
 
   const [rep, setRep] = useState<RepInfo | null>(null);
   const [metrics, setMetrics] = useState<AEMetrics | BDRMetrics | null>(null);
@@ -118,7 +116,7 @@ export default function RepDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/commissions/rep/${repId}?token=${token}&month=${selectedMonth}`);
+      const res = await fetch(`/api/commissions/rep/${repId}?month=${selectedMonth}`);
       if (!res.ok) { throw new Error(res.status === 401 ? "unauthorized" : "load_failed"); }
       const data = await res.json();
       setRep(data.rep); setMetrics(data.metrics); setMonthLabel(data.meta?.monthLabel || "");
@@ -126,7 +124,7 @@ export default function RepDashboard() {
         if (data.leaderboard) setLeaderboard(data.leaderboard);
       setError("");
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
-  }, [repId, token, selectedMonth]);
+  }, [repId, selectedMonth]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { const i = setInterval(fetchData, 120000); return () => clearInterval(i); }, [fetchData]);
