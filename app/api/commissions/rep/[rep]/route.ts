@@ -7,7 +7,7 @@ import {
 import { fetchChurnedRecordIdsFromUsersList, isChurnedDeal } from "@/lib/deals";
 import { attioQuery, getVal, validateToken } from "@/lib/attio";
 
-export const revalidate = 60;
+export const revalidate = 0;
 
 const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 const PAGE_SIZE = 500;

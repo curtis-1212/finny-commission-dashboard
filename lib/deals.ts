@@ -16,7 +16,10 @@ const ONBOARDING_DATE_ATTR = "onboarding_date_1750812621";
 const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
 // Users list slug in Attio (list containing customer records with subscription_cancel_request_date).
 const USERS_LIST_SLUG = process.env.ATTIO_USERS_LIST_SLUG ?? "users";
-const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_company";
+// Deals link to People -- the person record_id matches the Users list parent_record_id.
+const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_person";
+
+const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
 
 const PAGE_SIZE = 500;
 const LIST_PAGE_SIZE = 500;
@@ -37,11 +40,24 @@ export interface AERollup {
 
 /** Extract the commission-relevant date from a deal (onboarding_date, fallback to close_date) */
 function getDealDate(deal: any): string | null {
-    const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
-    const closeDate = getVal(deal, "close_date");
-    const dateToUse = onboardDate || closeDate;
-    if (!dateToUse) return null;
-    return String(dateToUse).slice(0, 10); // "YYYY-MM-DD"
+  const onboardDate = getVal(deal, ONBOARDING_DATE_ATTR);
+  const closeDate = getVal(deal, "close_date");
+  const dateToUse = onboardDate || closeDate;
+  if (!dateToUse) return null;
+  return String(dateToUse).slice(0, 10);
+}
+
+function getDemoHeldDate(deal: any): string | null {
+  const d = getVal(deal, DEMO_HELD_DATE_ATTR);
+  if (!d) return null;
+  return String(d).slice(0, 10);
+}
+
+function getDealStage(deal: any): string | null {
+  const s = getVal(deal, "stage");
+  if (!s) return null;
+  if (typeof s === "object" && s?.title) return s.title;
+  return String(s);
 }
 
 /** Check if value indicates churn (non-empty date). */
@@ -52,35 +68,84 @@ function hasChurnDate(val: any): boolean {
   return true;
 }
 
-/** Fetch parent_record_ids from Users list where subscription_cancel_request_date is set. */
+/**
+ * Fetch parent_record_ids from the Users list where subscription_cancel_request_date is set.
+ * Returns a Set of person record IDs that can be matched against deals' associated_person.
+ * Wrapped in try/catch so a failure here never crashes the whole dashboard.
+ */
 export async function fetchChurnedRecordIdsFromUsersList(): Promise<Set<string>> {
   const churnedIds = new Set<string>();
   if (!USERS_LIST_SLUG) return churnedIds;
 
-  let offset = 0;
-  while (true) {
-    const page = await attioListEntriesQuery(USERS_LIST_SLUG, {
-      limit: LIST_PAGE_SIZE,
-      offset,
-    });
-    const entries = page?.data ?? [];
-    for (const entry of entries) {
-      const churnVal = getEntryVal(entry, CHURN_REQUEST_DATE_ATTR);
-      if (hasChurnDate(churnVal) && entry.parent_record_id) {
-        churnedIds.add(String(entry.parent_record_id));
+  try {
+    let offset = 0;
+    let totalEntries = 0;
+    while (true) {
+      const page = await attioListEntriesQuery(USERS_LIST_SLUG, {
+        limit: LIST_PAGE_SIZE,
+        offset,
+      });
+      const entries = page?.data ?? [];
+      totalEntries += entries.length;
+
+      if (entries.length > 0 && offset === 0) {
+        const sample = entries[0];
+        const entryKeys = Object.keys(sample?.entry_values ?? {});
+        const recordKeys = Object.keys(sample?.record_values ?? {});
+        const valueKeys = Object.keys(sample?.values ?? {});
+        console.log(
+          `[churn-debug] Users list "${USERS_LIST_SLUG}" first entry:`,
+          JSON.stringify({
+            parent_record_id: sample.parent_record_id,
+            parent_object: sample.parent_object,
+            entry_value_keys: entryKeys.slice(0, 20),
+            record_value_keys: recordKeys.slice(0, 20),
+            value_keys: valueKeys.slice(0, 20),
+            looking_for: CHURN_REQUEST_DATE_ATTR,
+            found_in_entry_values: entryKeys.includes(CHURN_REQUEST_DATE_ATTR),
+            found_in_record_values: recordKeys.includes(CHURN_REQUEST_DATE_ATTR),
+            found_in_values: valueKeys.includes(CHURN_REQUEST_DATE_ATTR),
+          }),
+        );
       }
+
+      for (const entry of entries) {
+        const churnVal = getEntryVal(entry, CHURN_REQUEST_DATE_ATTR);
+        if (hasChurnDate(churnVal) && entry.parent_record_id) {
+          churnedIds.add(String(entry.parent_record_id));
+        }
+      }
+      if (entries.length < LIST_PAGE_SIZE) break;
+      offset += LIST_PAGE_SIZE;
     }
-    if (entries.length < LIST_PAGE_SIZE) break;
-    offset += LIST_PAGE_SIZE;
+    console.log(`[churn-debug] Scanned ${totalEntries} entries from "${USERS_LIST_SLUG}", found ${churnedIds.size} churned records`);
+  } catch (err: any) {
+    console.error(`[churn] Failed to fetch from Users list "${USERS_LIST_SLUG}":`, err?.message ?? err);
   }
   return churnedIds;
 }
 
-/** Deal is churned if linked record (e.g. company) is in churned set, or deal has churn date when not using list. */
+/**
+ * Deal is churned if its linked record (e.g. company) is in the churned set,
+ * OR the deal itself carries subscription_cancel_request_date.
+ *
+ * The linked-record attribute (associated_person) can surface as:
+ *   - a single target_record_id string (getVal returns it)
+ *   - multiple entries in the values array (getVal only returns the first)
+ * We check all entries in the raw values array to be thorough.
+ */
 export function isChurnedDeal(deal: any, churnedRecordIds: Set<string>): boolean {
   if (churnedRecordIds.size > 0) {
-    const linkedId = getVal(deal, DEAL_PARENT_ATTR);
-    if (linkedId && churnedRecordIds.has(String(linkedId))) return true;
+    const rawVals = deal?.values?.[DEAL_PARENT_ATTR];
+    if (Array.isArray(rawVals)) {
+      for (const v of rawVals) {
+        const id = v?.target_record_id ?? v?.value;
+        if (id && churnedRecordIds.has(String(id))) return true;
+      }
+    } else {
+      const linkedId = getVal(deal, DEAL_PARENT_ATTR);
+      if (linkedId && churnedRecordIds.has(String(linkedId))) return true;
+    }
   }
   const churnVal = getVal(deal, CHURN_REQUEST_DATE_ATTR);
   return hasChurnDate(churnVal);
@@ -143,6 +208,21 @@ export async function fetchMonthData(
     return d >= startISO && d <= endISO;
   });
 
+  if (wonInMonth.length > 0) {
+    const sample = wonInMonth[0];
+    const rawParent = sample?.values?.[DEAL_PARENT_ATTR];
+    console.log(
+      `[churn-debug] Deal→Person link: attr="${DEAL_PARENT_ATTR}"`,
+      JSON.stringify({
+        raw_value: rawParent,
+        resolved: getVal(sample, DEAL_PARENT_ATTR),
+        deal_attr_keys: Object.keys(sample?.values ?? {}).slice(0, 25),
+        churned_set_size: churnedRecordIds.size,
+        churned_sample: [...churnedRecordIds].slice(0, 3),
+      }),
+    );
+  }
+
   const closedLostDeals = await fetchAllDeals({ stage: "Closed Lost" });
   const lostInMonth = closedLostDeals.filter((deal: any) => {
     const d = getDealDate(deal);
@@ -187,6 +267,26 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].churnARR;
   }
 
+  // CW Rate: based on deals with demo_held_date in this month (any stage)
+  const allDeals = await fetchAllDeals({});
+  const demoInMonth = allDeals.filter((deal: any) => {
+    const d = getDemoHeldDate(deal);
+    if (!d) return false;
+    return d >= startISO && d <= endISO;
+  });
+  const demoCounts: Record<string, { total: number; won: number }> = {};
+  for (const ae of activeAEs) {
+    demoCounts[ae.id] = { total: 0, won: 0 };
+  }
+  for (const deal of demoInMonth) {
+    const ownerUUID = getVal(deal, "owner");
+    const aeId = OWNER_MAP[ownerUUID];
+    if (!aeId || !demoCounts[aeId]) continue;
+    demoCounts[aeId].total += 1;
+    const stage = getDealStage(deal);
+    if (stage === "Closed Won") demoCounts[aeId].won += 1;
+  }
+
   const aeResults = activeAEs.map((ae) => {
     const a = agg[ae.id] || {
       grossARR: 0, churnARR: 0, netARR: 0,
@@ -196,8 +296,8 @@ export async function fetchMonthData(
     const { commission, attainment, tierBreakdown } = calcAECommission(
       ae.monthlyQuota, ae.tiers, a.netARR,
     );
-    const totalDecided = a.dealCount + a.closedLostCount;
-    const cwRate = totalDecided > 0 ? a.dealCount / totalDecided : null;
+    const dc = demoCounts[ae.id] || { total: 0, won: 0 };
+    const cwRate = dc.total > 0 ? dc.won / dc.total : null;
     return {
       id: ae.id, name: ae.name, role: ae.role,
       initials: ae.initials, color: ae.color,

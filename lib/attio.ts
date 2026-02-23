@@ -12,7 +12,7 @@ export async function attioQuery(objectSlug: string, body: object) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -31,7 +31,7 @@ export async function attioListEntriesQuery(listSlugOrId: string, body: object) 
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -41,16 +41,27 @@ export async function attioListEntriesQuery(listSlugOrId: string, body: object) 
   return res.json();
 }
 
-/** Get attribute value from a list entry (entry_values shape matches record values). */
+/**
+ * Get attribute value from a list entry.
+ * Checks entry_values (list-scoped attrs) first, then record_values / values
+ * (parent record attrs surfaced on the entry).
+ */
 export function getEntryVal(entry: any, slug: string): any {
-  const vals = entry?.entry_values?.[slug];
-  if (!vals || !Array.isArray(vals) || vals.length === 0) return null;
-  const first = vals[0];
-  if (first?.value !== undefined) return first.value;
-  if (first?.target_record_id) return first.target_record_id;
-  if (first?.currency_value !== undefined) return first.currency_value;
-  if (typeof first === "string") return first;
-  return first;
+  const candidates = [
+    entry?.entry_values?.[slug],
+    entry?.record_values?.[slug],
+    entry?.values?.[slug],
+  ];
+  for (const vals of candidates) {
+    if (!vals || !Array.isArray(vals) || vals.length === 0) continue;
+    const first = vals[0];
+    if (first?.value !== undefined) return first.value;
+    if (first?.target_record_id) return first.target_record_id;
+    if (first?.currency_value !== undefined) return first.currency_value;
+    if (typeof first === "string") return first;
+    return first;
+  }
+  return null;
 }
 
 export function getVal(record: any, slug: string): any {

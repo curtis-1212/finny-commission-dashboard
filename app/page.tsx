@@ -115,10 +115,10 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount, cwRate }: {
+function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount, cwRate, cwRateLabel }: {
   name: string; initials: string; actual: number; quota: number;
   att: number; commission: number; churn: number; deals: number; type: string;
-  demoCount?: number; excludedCount?: number; cwRate?: number | null;
+  demoCount?: number; excludedCount?: number; cwRate?: number | null; cwRateLabel?: string;
 }) {
   const pct = Math.min(att, 1.5);
   const barColor = att >= 1.0
@@ -187,7 +187,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
           {/* CW Rate */}
           {!isBDR && (
             <div style={{ flex: 0.7, textAlign: "right" as const }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>CW RATE</div>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>{cwRateLabel || "CW RATE"}</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
                 {cwRate != null ? fmtPct0(cwRate) : "—"}
               </div>
@@ -311,8 +311,15 @@ export default function ExecDashboard() {
   const churnRate = totalGrossARR > 0 ? totalChurnARR / totalGrossARR : 0;
   const commAsPercent = totalNetARR > 0 ? totalComm / totalNetARR : 0;
 
-  // Sort AEs by attainment descending
-  const sortedAEs = [...aeResults].sort((a, b) => (b.attainment || 0) - (a.attainment || 0));
+  const sortedAEs = [...aeResults].sort((a, b) => (b.netARR || 0) - (a.netARR || 0));
+
+  // "January 2026" → "CW Rate (Jan '26)"
+  const cwRateLabel = (() => {
+    if (!monthLabel) return "CW RATE";
+    const parts = monthLabel.split(" ");
+    if (parts.length < 2) return "CW RATE";
+    return `CW RATE (${parts[0].slice(0, 3)} '${parts[1].slice(-2)})`;
+  })();
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: F.b }}>
@@ -503,7 +510,7 @@ export default function ExecDashboard() {
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
-                Ranked by attainment
+                Ranked by New ARR
               </div>
             </div>
 
@@ -520,7 +527,8 @@ export default function ExecDashboard() {
                 churn={ae.churnARR || 0}
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
-                                    cwRate={ae.cwRate}
+                cwRate={ae.cwRate}
+                cwRateLabel={cwRateLabel}
                 excludedCount={ae.churnCount ?? ae.excludedCount ?? 0}
                 type="ae"
               />
