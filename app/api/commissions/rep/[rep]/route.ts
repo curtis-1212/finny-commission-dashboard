@@ -4,7 +4,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedRecordIdsFromUsersList, isChurnedDeal } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
 
 export const revalidate = 0;
@@ -48,7 +48,8 @@ export async function GET(
     const { startISO, endISO, label: monthLabel } = getMonthRange(year, month);
     const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
 
-    const churnedRecordIds = await fetchChurnedRecordIdsFromUsersList();
+    // User-centric churn: fetch churned users with dates, attribute via deals
+    const churnedUsers = await fetchChurnedUsersFromUsersList();
 
     const closedWonAll = await fetchAllDeals({ stage: "Closed Won" });
     const closedLostAll = await fetchAllDeals({ stage: "Closed Lost" });
@@ -64,6 +65,14 @@ export async function GET(
     const wonInMonth = filterByMonth(closedWonAll);
     const lostInMonth = filterByMonth(closedLostAll);
     const introInMonth = filterByMonth(introCallAll);
+
+    // Build churn aggregation from Users list → deals → AEs
+    const activeAEs = getActiveAEs(selectedMonth);
+    const activeAEIds = new Set(activeAEs.map(ae => ae.id));
+    const churnAgg = buildChurnAggregation(
+      churnedUsers, startISO, endISO,
+      closedWonAll, OWNER_MAP, activeAEIds,
+    );
 
     if (repId === "max") {
       let meetings = 0, introCallCount = 0;
@@ -85,15 +94,16 @@ export async function GET(
     const ae = AE_DATA.find((a) => a.id === repId);
     if (!ae) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    let grossARR = 0, churnARR = 0, closedWonCount = 0, closedWonARR = 0;
-    let churnedCount = 0, closedLostCount = 0, closedLostARR = 0, introCallCount = 0;
+    // Count ALL Closed Won deals as gross ARR (no deal-level churn exclusion)
+    let grossARR = 0, closedWonCount = 0, closedWonARR = 0;
+    let closedLostCount = 0, closedLostARR = 0, introCallCount = 0;
 
     for (const deal of wonInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       const value = getVal(deal, "value") || 0;
       grossARR += value;
-      if (isChurnedDeal(deal, churnedRecordIds)) { churnedCount += 1; churnARR += value; }
-      else { closedWonCount += 1; closedWonARR += value; }
+      closedWonCount += 1;
+      closedWonARR += value;
     }
 
     for (const deal of lostInMonth) {
@@ -106,18 +116,23 @@ export async function GET(
       introCallCount += 1;
     }
 
+    // Apply user-centric churn for this rep
+    const repChurn = churnAgg.perAE[repId] || { churnCount: 0, churnARR: 0 };
+    const churnedCount = repChurn.churnCount;
+    const churnARR = repChurn.churnARR;
+
     const netARR = grossARR - churnARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
 
-    const activeAEs = getActiveAEs(selectedMonth);
+    // Leaderboard uses same user-centric churn data
     const leaderboard = activeAEs.map((lbAe) => {
-      let lbGross = 0, lbChurn = 0;
+      let lbGross = 0;
       for (const deal of wonInMonth) {
         if (OWNER_MAP[getVal(deal, "owner")] !== lbAe.id) continue;
-        const v = getVal(deal, "value") || 0;
-        if (isChurnedDeal(deal, churnedRecordIds)) lbChurn += v; else lbGross += v;
+        lbGross += getVal(deal, "value") || 0;
       }
-      return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbChurn };
+      const lbChurnARR = churnAgg.perAE[lbAe.id]?.churnARR || 0;
+      return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbChurnARR };
     }).sort((a, b) => b.netARR - a.netARR);
 
     return NextResponse.json({
