@@ -6,6 +6,8 @@ import {
 } from "@/lib/commission-config";
 import { fetchChurnedUsersFromUsersList, buildChurnAggregation } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
+import { createClient } from "@/lib/supabase/server";
+import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;
 
@@ -36,6 +38,19 @@ export async function GET(
 ) {
   const repId = params.rep;
   const monthParam = request.nextUrl.searchParams.get("month");
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = getUserRole(user.email);
+  if (!role) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (role.type === "rep" && role.repId !== repId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const validReps = ["jason", "kelcy", "max", "austin", "roy"];
   if (!validReps.includes(repId)) {
