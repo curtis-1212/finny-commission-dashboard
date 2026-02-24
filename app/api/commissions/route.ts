@@ -4,10 +4,22 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
+import { createClient } from "@/lib/supabase/server";
+import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window
 
 export async function GET(request: NextRequest) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = getUserRole(user.email);
+  if (!role || role.type !== "exec") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const useLive = request.nextUrl.searchParams.get("live") === "true";
   const monthParam = request.nextUrl.searchParams.get("month");
 
