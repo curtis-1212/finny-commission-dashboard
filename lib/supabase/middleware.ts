@@ -4,7 +4,9 @@ import { getUserRole } from "@/lib/roles";
 
 function redirectWithCookies(url: URL, supabaseResponse: NextResponse) {
   const redirect = NextResponse.redirect(url);
-  redirect.cookies.setAll(supabaseResponse.cookies.getAll());
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    redirect.cookies.set(cookie.name, cookie.value);
+  });
   return redirect;
 }
 
