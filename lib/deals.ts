@@ -33,6 +33,16 @@ export interface AERollup {
   closedLostARR: number;
 }
 
+export interface ChurnedUser {
+  personRecordId: string;
+  churnDate: string; // "YYYY-MM-DD"
+}
+
+export interface ChurnAggregation {
+  perAE: Record<string, { churnCount: number; churnARR: number }>;
+  unattributed: { churnCount: number; churnARR: number };
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Extract the commission-relevant date from a deal (close_date — the month the deal was moved to Closed Won) */
@@ -63,14 +73,32 @@ function hasChurnDate(val: any): boolean {
   return true;
 }
 
+/** Parse a churn date value from Attio into a "YYYY-MM-DD" string. */
+function parseChurnDate(val: any): string | null {
+  if (val == null) return null;
+  let raw: string;
+  if (typeof val === "string") {
+    raw = val.trim();
+  } else if (typeof val === "object" && val?.value != null) {
+    raw = String(val.value).trim();
+  } else {
+    raw = String(val).trim();
+  }
+  if (!raw) return null;
+  const dateStr = raw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  return dateStr;
+}
+
 /**
- * Fetch parent_record_ids from the Users list where subscription_cancel_request_date is set.
- * Returns a Set of person record IDs that can be matched against deals' associated_person.
+ * Fetch users from the Users list who have subscription_cancel_request_date set.
+ * Returns an array of ChurnedUser with personRecordId and the actual churn date,
+ * so callers can filter by month.
  * Wrapped in try/catch so a failure here never crashes the whole dashboard.
  */
-export async function fetchChurnedRecordIdsFromUsersList(): Promise<Set<string>> {
-  const churnedIds = new Set<string>();
-  if (!USERS_LIST_SLUG) return churnedIds;
+export async function fetchChurnedUsersFromUsersList(): Promise<ChurnedUser[]> {
+  const churnedUsers: ChurnedUser[] = [];
+  if (!USERS_LIST_SLUG) return churnedUsers;
 
   try {
     let offset = 0;
@@ -106,18 +134,119 @@ export async function fetchChurnedRecordIdsFromUsersList(): Promise<Set<string>>
 
       for (const entry of entries) {
         const churnVal = getEntryVal(entry, CHURN_REQUEST_DATE_ATTR);
-        if (hasChurnDate(churnVal) && entry.parent_record_id) {
-          churnedIds.add(String(entry.parent_record_id));
-        }
+        if (!hasChurnDate(churnVal) || !entry.parent_record_id) continue;
+        const dateStr = parseChurnDate(churnVal);
+        if (!dateStr) continue;
+        churnedUsers.push({
+          personRecordId: String(entry.parent_record_id),
+          churnDate: dateStr,
+        });
       }
       if (entries.length < LIST_PAGE_SIZE) break;
       offset += LIST_PAGE_SIZE;
     }
-    console.log(`[churn-debug] Scanned ${totalEntries} entries from "${USERS_LIST_SLUG}", found ${churnedIds.size} churned records`);
+    console.log(`[churn-debug] Scanned ${totalEntries} entries from "${USERS_LIST_SLUG}", found ${churnedUsers.length} churned records`);
   } catch (err: any) {
     console.error(`[churn] Failed to fetch from Users list "${USERS_LIST_SLUG}":`, err?.message ?? err);
   }
-  return churnedIds;
+  return churnedUsers;
+}
+
+/** Convert ChurnedUser array to a Set of person record IDs (for backward compat). */
+export function churnedUsersToIdSet(users: ChurnedUser[]): Set<string> {
+  return new Set(users.map(u => u.personRecordId));
+}
+
+/**
+ * User-centric churn aggregation: starts from the Users list (churned users),
+ * traces back through deals to attribute churn to AEs.
+ *
+ * For each user who churned in the selected month:
+ *   1. Find their Closed Won deals (any close date) via associated_person
+ *   2. Use the most recent deal's owner as the responsible AE
+ *   3. Use that deal's value as churnARR
+ */
+export function buildChurnAggregation(
+  churnedUsers: ChurnedUser[],
+  startISO: string,
+  endISO: string,
+  closedWonDeals: any[],
+  ownerMap: Record<string, string>,
+  activeAEIds: Set<string>,
+): ChurnAggregation {
+  // Step 1: Filter to users who churned in the selected month
+  const churnedInMonth = churnedUsers.filter(u =>
+    u.churnDate >= startISO && u.churnDate <= endISO
+  );
+
+  // Step 2: Build reverse map from personRecordId → deals
+  const dealsByPerson = new Map<string, any[]>();
+  for (const deal of closedWonDeals) {
+    const rawVals = deal?.values?.[DEAL_PARENT_ATTR];
+    const personIds: string[] = [];
+    if (Array.isArray(rawVals)) {
+      for (const v of rawVals) {
+        const id = v?.target_record_id ?? v?.value;
+        if (id) personIds.push(String(id));
+      }
+    } else {
+      const id = getVal(deal, DEAL_PARENT_ATTR);
+      if (id) personIds.push(String(id));
+    }
+    for (const pid of personIds) {
+      if (!dealsByPerson.has(pid)) dealsByPerson.set(pid, []);
+      dealsByPerson.get(pid)!.push(deal);
+    }
+  }
+
+  // Step 3: For each churned user, attribute to AE via most recent deal
+  const perAE: Record<string, { churnCount: number; churnARR: number }> = {};
+  let unattributedCount = 0;
+  let unattributedARR = 0;
+
+  for (const user of churnedInMonth) {
+    const deals = dealsByPerson.get(user.personRecordId) || [];
+    if (deals.length === 0) {
+      unattributedCount += 1;
+      continue;
+    }
+
+    // Find most recent deal by close_date
+    let bestDeal = deals[0];
+    let bestDate = getDealDate(deals[0]) || "";
+    for (let i = 1; i < deals.length; i++) {
+      const d = getDealDate(deals[i]) || "";
+      if (d > bestDate) {
+        bestDate = d;
+        bestDeal = deals[i];
+      }
+    }
+
+    const ownerUUID = getVal(bestDeal, "owner");
+    const aeId = ownerMap[ownerUUID];
+    const value = getVal(bestDeal, "value") || 0;
+
+    if (!aeId || !activeAEIds.has(aeId)) {
+      unattributedCount += 1;
+      unattributedARR += value;
+      continue;
+    }
+
+    if (!perAE[aeId]) perAE[aeId] = { churnCount: 0, churnARR: 0 };
+    perAE[aeId].churnCount += 1;
+    perAE[aeId].churnARR += value;
+  }
+
+  console.log(
+    `[churn] Month ${startISO} to ${endISO}: ${churnedInMonth.length} users churned, ` +
+    `attributed to ${Object.keys(perAE).length} AEs, ` +
+    `${unattributedCount} unattributed`
+  );
+
+  return {
+    perAE,
+    unattributed: { churnCount: unattributedCount, churnARR: unattributedARR },
+  };
 }
 
 /**
@@ -194,7 +323,8 @@ export async function fetchMonthData(
     const OWNER_MAP = buildOwnerMap();
   const activeAEs = getActiveAEs(selectedMonthStr);
 
-  const churnedRecordIds = await fetchChurnedRecordIdsFromUsersList();
+  // User-centric churn: fetch churned users with dates, then attribute to AEs via deals
+  const churnedUsers = await fetchChurnedUsersFromUsersList();
 
   const closedWonDeals = await fetchAllDeals({ stage: "Closed Won" });
   const wonInMonth = closedWonDeals.filter((deal: any) => {
@@ -203,20 +333,12 @@ export async function fetchMonthData(
     return d >= startISO && d <= endISO;
   });
 
-  if (wonInMonth.length > 0) {
-    const sample = wonInMonth[0];
-    const rawParent = sample?.values?.[DEAL_PARENT_ATTR];
-    console.log(
-      `[churn-debug] Deal→Person link: attr="${DEAL_PARENT_ATTR}"`,
-      JSON.stringify({
-        raw_value: rawParent,
-        resolved: getVal(sample, DEAL_PARENT_ATTR),
-        deal_attr_keys: Object.keys(sample?.values ?? {}).slice(0, 25),
-        churned_set_size: churnedRecordIds.size,
-        churned_sample: Array.from(churnedRecordIds).slice(0, 3),
-      }),
-    );
-  }
+  // Build churn aggregation from Users list → deals → AEs
+  const activeAEIds = new Set(activeAEs.map(ae => ae.id));
+  const churnAgg = buildChurnAggregation(
+    churnedUsers, startISO, endISO,
+    closedWonDeals, OWNER_MAP, activeAEIds,
+  );
 
   const closedLostDeals = await fetchAllDeals({ stage: "Closed Lost" });
   const lostInMonth = closedLostDeals.filter((deal: any) => {
@@ -234,19 +356,21 @@ export async function fetchMonthData(
     };
   }
 
+  // Count ALL Closed Won deals in month as gross ARR (no deal-level churn exclusion)
   for (const deal of wonInMonth) {
     const ownerUUID = getVal(deal, "owner");
     const aeId = OWNER_MAP[ownerUUID];
     if (!aeId || !agg[aeId]) continue;
     const value = getVal(deal, "value") || 0;
-    const churned = isChurnedDeal(deal, churnedRecordIds);
     agg[aeId].grossARR += value;
-    if (churned) {
-      agg[aeId].churnARR += value;
-      agg[aeId].churnCount += 1;
-    } else {
-      agg[aeId].dealCount += 1;
-    }
+    agg[aeId].dealCount += 1;
+  }
+
+  // Apply user-centric churn data
+  for (const [aeId, churnData] of Object.entries(churnAgg.perAE)) {
+    if (!agg[aeId]) continue;
+    agg[aeId].churnCount = churnData.churnCount;
+    agg[aeId].churnARR = churnData.churnARR;
   }
 
   for (const deal of lostInMonth) {
