@@ -88,8 +88,8 @@ function KPI({ label, value, sub, accent, large }: {
     <div style={{
       padding: large ? "20px 0" : "16px 0",
       borderRight: `1px solid ${C.border}`,
-      flex: 1,
-      minWidth: 0,
+      flex: "1 1 140px",
+      minWidth: 140,
     }}>
       <div style={{
         fontSize: 10, fontWeight: 500, color: C.textDim,
@@ -157,9 +157,9 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
         </div>
 
         {/* Metrics row */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 0 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
           {/* Net ARR / Meetings */}
-          <div style={{ flex: 1, textAlign: "right" as const }}>
+          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Mtgs" : "Net ARR"}</div>
             <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>
               {isBDR ? actual : fmtK(actual)}
@@ -167,7 +167,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
           </div>
 
           {/* Attainment */}
-          <div style={{ flex: 1, textAlign: "right" as const }}>
+          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Attain.</div>
             <div style={{
               fontSize: 15, fontWeight: 700, fontFamily: F.m,
@@ -178,7 +178,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
           </div>
 
           {/* Deals */}
-          <div style={{ flex: 0.7, textAlign: "right" as const }}>
+          <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Target" : "Deals"}</div>
             <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
           </div>
@@ -186,7 +186,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
 
           {/* CW Rate */}
           {!isBDR && (
-            <div style={{ flex: 0.7, textAlign: "right" as const }}>
+            <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>{cwRateLabel || "CW RATE"}</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
                 {cwRate != null ? fmtPct0(cwRate) : "—"}
@@ -196,7 +196,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
 
           {/* Churned Users */}
           {!isBDR && (
-            <div style={{ flex: 0.8, textAlign: "right" as const }}>
+            <div style={{ flex: "0.8 1 55px", textAlign: "right" as const, minWidth: 45 }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Churned Users</div>
               <div style={{
                 fontSize: 15, fontWeight: 600, fontFamily: F.m,
@@ -208,7 +208,7 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
           )}
 
           {/* Commission */}
-          <div style={{ flex: 1, textAlign: "right" as const }}>
+          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Comm.</div>
             <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.accent, letterSpacing: "-0.02em" }}>
               {fmtK(commission)}
@@ -387,7 +387,7 @@ export default function ExecDashboard() {
         {/* ─── KPI COCKPIT ──────────────────────────────────────────── */}
         {isLive && aeResults.length > 0 && (
           <div style={{
-            display: "flex", gap: 0,
+            display: "flex", flexWrap: "wrap" as const, gap: 0,
             padding: "0 20px",
             marginTop: 20,
             background: C.card,
