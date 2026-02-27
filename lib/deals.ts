@@ -1,7 +1,7 @@
 // SERVER-ONLY -- Shared Attio deal-fetching and aggregation logic.
 // Both the exec route and rep route call these functions so the numbers always match.
 
-import { attioQuery, attioListEntriesQuery, getVal, getEntryVal } from "@/lib/attio";
+import { attioQuery, getVal } from "@/lib/attio";
 import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
     calcAECommission, calcBDRCommission, BDR_DATA,
@@ -9,17 +9,20 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-// Churn: from Users list (entry has subscription_cancel_request_date) or fallback to same attr on deal.
+// Churn: from Users object (has subscription_cancel_request_date attribute).
 const CHURN_REQUEST_DATE_ATTR = process.env.ATTIO_CHURN_REQUEST_DATE_ATTR || "subscription_cancel_request_date";
-// Users list slug in Attio (list containing customer records with subscription_cancel_request_date).
-const USERS_LIST_SLUG = process.env.ATTIO_USERS_LIST_SLUG ?? "users";
-// Deals link to People -- the person record_id matches the Users list parent_record_id.
-const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_person";
+// Users object slug in Attio (object containing customer records with subscription_cancel_request_date).
+// Can be a slug like "users" or the object UUID.
+const USERS_OBJECT_SLUG = process.env.ATTIO_USERS_OBJECT_SLUG ?? "users";
+// Attribute on Users object that links to the Person record.
+const USERS_PERSON_ATTR = process.env.ATTIO_USERS_PERSON_ATTR ?? "person";
+// Deals link to People -- the person record_id matches the Users' person attribute.
+// Note: SQL shows "associated_people" (plural) - the code tries both.
+const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_people";
 
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
 
 const PAGE_SIZE = 500;
-const LIST_PAGE_SIZE = 500;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +34,8 @@ export interface AERollup {
   churnCount: number;
   closedLostCount: number;
   closedLostARR: number;
+  optOutARR: number;
+  optOutCount: number;
 }
 
 export interface ChurnedUser {
@@ -41,6 +46,10 @@ export interface ChurnedUser {
 export interface ChurnAggregation {
   perAE: Record<string, { churnCount: number; churnARR: number }>;
   unattributed: { churnCount: number; churnARR: number };
+}
+
+export interface OptOutAggregation {
+  perAE: Record<string, { optOutCount: number; optOutARR: number }>;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -91,63 +100,53 @@ function parseChurnDate(val: any): string | null {
 }
 
 /**
- * Fetch users from the Users list who have subscription_cancel_request_date set.
+ * Fetch users from the Users object who have subscription_cancel_request_date set.
  * Returns an array of ChurnedUser with personRecordId and the actual churn date,
  * so callers can filter by month.
+ * 
+ * The Users object has a "person" attribute that links to the Person record.
+ * Deals link to People via "associated_person", so we use the person link from
+ * the User record as the personRecordId.
+ * 
  * Wrapped in try/catch so a failure here never crashes the whole dashboard.
  */
 export async function fetchChurnedUsersFromUsersList(): Promise<ChurnedUser[]> {
   const churnedUsers: ChurnedUser[] = [];
-  if (!USERS_LIST_SLUG) return churnedUsers;
+  if (!USERS_OBJECT_SLUG) return churnedUsers;
 
   try {
     let offset = 0;
-    let totalEntries = 0;
+    let totalRecords = 0;
     while (true) {
-      const page = await attioListEntriesQuery(USERS_LIST_SLUG, {
-        limit: LIST_PAGE_SIZE,
+      const page = await attioQuery(USERS_OBJECT_SLUG, {
+        limit: PAGE_SIZE,
         offset,
       });
-      const entries = page?.data ?? [];
-      totalEntries += entries.length;
+      const records = page?.data ?? [];
+      totalRecords += records.length;
 
-      if (entries.length > 0 && offset === 0) {
-        const sample = entries[0];
-        const entryKeys = Object.keys(sample?.entry_values ?? {});
-        const recordKeys = Object.keys(sample?.record_values ?? {});
-        const valueKeys = Object.keys(sample?.values ?? {});
-        console.log(
-          `[churn-debug] Users list "${USERS_LIST_SLUG}" first entry:`,
-          JSON.stringify({
-            parent_record_id: sample.parent_record_id,
-            parent_object: sample.parent_object,
-            entry_value_keys: entryKeys.slice(0, 20),
-            record_value_keys: recordKeys.slice(0, 20),
-            value_keys: valueKeys.slice(0, 20),
-            looking_for: CHURN_REQUEST_DATE_ATTR,
-            found_in_entry_values: entryKeys.includes(CHURN_REQUEST_DATE_ATTR),
-            found_in_record_values: recordKeys.includes(CHURN_REQUEST_DATE_ATTR),
-            found_in_values: valueKeys.includes(CHURN_REQUEST_DATE_ATTR),
-          }),
-        );
-      }
-
-      for (const entry of entries) {
-        const churnVal = getEntryVal(entry, CHURN_REQUEST_DATE_ATTR);
-        if (!hasChurnDate(churnVal) || !entry.parent_record_id) continue;
+      for (const record of records) {
+        const churnVal = getVal(record, CHURN_REQUEST_DATE_ATTR);
+        if (!hasChurnDate(churnVal)) continue;
+        
+        // Get the linked Person record ID from the Users object
+        const personId = getVal(record, USERS_PERSON_ATTR);
+        if (!personId) continue;
+        
         const dateStr = parseChurnDate(churnVal);
         if (!dateStr) continue;
+        
         churnedUsers.push({
-          personRecordId: String(entry.parent_record_id),
+          personRecordId: String(personId),
           churnDate: dateStr,
         });
       }
-      if (entries.length < LIST_PAGE_SIZE) break;
-      offset += LIST_PAGE_SIZE;
+      if (records.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
-    console.log(`[churn-debug] Scanned ${totalEntries} entries from "${USERS_LIST_SLUG}", found ${churnedUsers.length} churned records`);
+    console.log(`[churn] Scanned ${totalRecords} user records, found ${churnedUsers.length} with churn dates`);
   } catch (err: any) {
-    console.error(`[churn] Failed to fetch from Users list "${USERS_LIST_SLUG}":`, err?.message ?? err);
+    console.error(`[churn] Failed to fetch from Users object "${USERS_OBJECT_SLUG}":`, err?.message ?? err);
   }
   return churnedUsers;
 }
@@ -250,6 +249,87 @@ export function buildChurnAggregation(
 }
 
 /**
+ * Opt-out aggregation: identifies deals where the associated user's churn request date
+ * is within 30 days of the deal's close date. These are considered "opt-outs" where
+ * the AE should not count towards closed ARR.
+ *
+ * Scope: Uses churn_request_date from the PRIOR month (passed via startISO/endISO).
+ * This ensures opt-out totals are finalized and won't change mid-month.
+ * Searches all closed won deals to find matches.
+ */
+export function buildOptOutAggregation(
+  churnedUsers: ChurnedUser[],
+  startISO: string,
+  endISO: string,
+  wonInMonth: any[],
+  ownerMap: Record<string, string>,
+  activeAEIds: Set<string>,
+): OptOutAggregation {
+  // Build map from personRecordId → churnDate for users who churned in this month
+  const churnDateByPerson = new Map<string, string>();
+  for (const user of churnedUsers) {
+    if (user.churnDate >= startISO && user.churnDate <= endISO) {
+      churnDateByPerson.set(user.personRecordId, user.churnDate);
+    }
+  }
+
+  const perAE: Record<string, { optOutCount: number; optOutARR: number }> = {};
+
+  for (const deal of wonInMonth) {
+    const closeDate = getDealDate(deal);
+    if (!closeDate) continue;
+
+    // Get person IDs linked to this deal
+    const rawVals = deal?.values?.[DEAL_PARENT_ATTR];
+    const personIds: string[] = [];
+    if (Array.isArray(rawVals)) {
+      for (const v of rawVals) {
+        const id = v?.target_record_id ?? v?.value;
+        if (id) personIds.push(String(id));
+      }
+    } else {
+      const id = getVal(deal, DEAL_PARENT_ATTR);
+      if (id) personIds.push(String(id));
+    }
+
+    // Check if any associated person churned within 30 days of deal close
+    let isOptOut = false;
+    for (const personId of personIds) {
+      const churnDate = churnDateByPerson.get(personId);
+      if (churnDate) {
+        const closeDateMs = new Date(closeDate).getTime();
+        const churnDateMs = new Date(churnDate).getTime();
+        const daysDiff = (churnDateMs - closeDateMs) / (1000 * 60 * 60 * 24);
+        if (daysDiff >= 0 && daysDiff <= 30) {
+          isOptOut = true;
+          break;
+        }
+      }
+    }
+
+    if (!isOptOut) continue;
+
+    const ownerUUID = getVal(deal, "owner");
+    const aeId = ownerMap[ownerUUID];
+    if (!aeId || !activeAEIds.has(aeId)) continue;
+
+    const value = getVal(deal, "value") || 0;
+    if (!perAE[aeId]) perAE[aeId] = { optOutCount: 0, optOutARR: 0 };
+    perAE[aeId].optOutCount += 1;
+    perAE[aeId].optOutARR += value;
+  }
+
+  const totalOptOuts = Object.values(perAE).reduce((sum, v) => sum + v.optOutCount, 0);
+  const totalOptOutARR = Object.values(perAE).reduce((sum, v) => sum + v.optOutARR, 0);
+  console.log(
+    `[opt-out] Churn dates ${startISO} to ${endISO} (prior month): ${totalOptOuts} opt-out deals ($${totalOptOutARR.toLocaleString()} ARR), ` +
+    `attributed to ${Object.keys(perAE).length} AEs`
+  );
+
+  return { perAE };
+}
+
+/**
  * Deal is churned if its linked record (e.g. company) is in the churned set,
  * OR the deal itself carries subscription_cancel_request_date.
  *
@@ -298,6 +378,7 @@ export interface MonthData {
     type: "ae"; monthlyQuota: number; annualQuota: number;
     grossARR: number; churnARR: number; netARR: number;
     dealCount: number; churnCount: number; closedLostCount: number; closedLostARR: number;
+    optOutARR: number; optOutCount: number;
     cwRate: number | null;
     attainment: number; commission: number;
     tierBreakdown: { label?: string; amount: number }[];
@@ -340,6 +421,25 @@ export async function fetchMonthData(
     closedWonDeals, OWNER_MAP, activeAEIds,
   );
 
+  // Calculate prior month range for opt-out calculation (opt-outs lag by one month)
+  const selectedDate = new Date(startISO);
+  const priorMonth = selectedDate.getUTCMonth(); // 0-indexed, so this gives prior month
+  const priorYear = priorMonth === 0 
+    ? selectedDate.getUTCFullYear() - 1 
+    : selectedDate.getUTCFullYear();
+  const priorMonthNum = priorMonth === 0 ? 12 : priorMonth;
+  const priorStart = new Date(Date.UTC(priorYear, priorMonthNum - 1, 1));
+  const priorEnd = new Date(Date.UTC(priorYear, priorMonthNum, 0));
+  const priorStartISO = priorStart.toISOString().split("T")[0];
+  const priorEndISO = priorEnd.toISOString().split("T")[0];
+
+  // Build opt-out aggregation: deals where user churned within 30 days of close
+  // Uses PRIOR month's churn dates so opt-out totals are finalized
+  const optOutAgg = buildOptOutAggregation(
+    churnedUsers, priorStartISO, priorEndISO,
+    closedWonDeals, OWNER_MAP, activeAEIds,
+  );
+
   const closedLostDeals = await fetchAllDeals({ stage: "Closed Lost" });
   const lostInMonth = closedLostDeals.filter((deal: any) => {
     const d = getDealDate(deal);
@@ -353,6 +453,7 @@ export async function fetchMonthData(
       grossARR: 0, churnARR: 0, netARR: 0,
       dealCount: 0, churnCount: 0,
       closedLostCount: 0, closedLostARR: 0,
+      optOutARR: 0, optOutCount: 0,
     };
   }
 
@@ -373,6 +474,13 @@ export async function fetchMonthData(
     agg[aeId].churnARR = churnData.churnARR;
   }
 
+  // Apply opt-out data (deals where user churned within 30 days of close)
+  for (const [aeId, optOutData] of Object.entries(optOutAgg.perAE)) {
+    if (!agg[aeId]) continue;
+    agg[aeId].optOutCount = optOutData.optOutCount;
+    agg[aeId].optOutARR = optOutData.optOutARR;
+  }
+
   for (const deal of lostInMonth) {
     const ownerUUID = getVal(deal, "owner");
     const aeId = OWNER_MAP[ownerUUID];
@@ -383,7 +491,7 @@ export async function fetchMonthData(
   }
 
   for (const id of Object.keys(agg)) {
-    agg[id].netARR = agg[id].grossARR - agg[id].churnARR;
+    agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
   // CW Rate: based on deals with demo_held_date in this month (any stage)
@@ -411,6 +519,7 @@ export async function fetchMonthData(
       grossARR: 0, churnARR: 0, netARR: 0,
       dealCount: 0, churnCount: 0,
       closedLostCount: 0, closedLostARR: 0,
+      optOutARR: 0, optOutCount: 0,
     };
     const { commission, attainment, tierBreakdown } = calcAECommission(
       ae.monthlyQuota, ae.tiers, a.netARR,
@@ -425,6 +534,7 @@ export async function fetchMonthData(
       grossARR: a.grossARR, churnARR: a.churnARR, netARR: a.netARR,
       dealCount: a.dealCount, churnCount: a.churnCount,
       closedLostCount: a.closedLostCount, closedLostARR: a.closedLostARR,
+      optOutARR: a.optOutARR, optOutCount: a.optOutCount,
       cwRate,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),

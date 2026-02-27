@@ -12,6 +12,7 @@ interface AEMetrics {
   introCallsScheduled: number;
   toBeOnboarded: StageCount; closedWon: StageCount;
   closedLost: StageCount; churned: StageCount;
+  optOut?: StageCount;
 }
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
@@ -181,7 +182,7 @@ export default function RepDashboard() {
   return (
     <div style={{ minHeight: "100vh", background: B.bg, position: "relative", overflow: "hidden" }}>
       <style>{KF}</style>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');`}</style>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
 
       {/* Ambient */}
       <div style={{ position: "fixed", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: `radial-gradient(circle, ${B.primary}06 0%, transparent 60%)`, pointerEvents: "none" }} />
@@ -318,8 +319,10 @@ export default function RepDashboard() {
               <PRow icon="📞" label="Intro Calls" count={aeM.introCallsScheduled} />
               <PRow icon="🚀" label="To Be Onboarded" count={aeM.toBeOnboarded.count} arr={aeM.toBeOnboarded.arr} hl />
               <PRow icon="✅" label="Closed Won" count={aeM.closedWon.count} arr={aeM.closedWon.arr} hl />
+              {aeM.optOut && aeM.optOut.count > 0 && (
+                <PRow icon="⏱️" label="Opt-outs (≤30 days)" count={aeM.optOut.count} arr={aeM.optOut.arr} neg />
+              )}
               <PRow icon="❌" label="Closed Lost" count={aeM.closedLost.count} arr={aeM.closedLost.arr} />
-              <PRow icon="🔄" label="Churned" count={aeM.churned?.count || 0} arr={aeM.churned?.arr || 0} neg />
             </>
           ) : (
             <>

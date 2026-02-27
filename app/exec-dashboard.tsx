@@ -8,7 +8,8 @@ interface AEResult {
   grossARR?: number; churnARR?: number; netARR?: number;
   dealCount?: number; churnCount?: number; excludedCount?: number;
   demoCount?: number;
-    cwRate?: number | null;
+  optOutARR?: number; optOutCount?: number;
+  cwRate?: number | null;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
 }
@@ -115,10 +116,11 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, quota, att, commission, churn, deals, type, demoCount, excludedCount, cwRate, cwRateLabel }: {
-  name: string; initials: string; actual: number; quota: number;
-  att: number; commission: number; churn: number; deals: number; type: string;
-  demoCount?: number; excludedCount?: number; cwRate?: number | null; cwRateLabel?: string;
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount }: {
+  name: string; initials: string; actual: number; grossARR?: number; quota: number;
+  att: number; commission: number; deals: number; type: string;
+  demoCount?: number; cwRate?: number | null; cwRateLabel?: string;
+  optOutARR?: number; optOutCount?: number;
 }) {
   const pct = Math.min(att, 1.5);
   const barColor = att >= 1.0
@@ -194,15 +196,15 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
             </div>
           )}
 
-          {/* Churned Users */}
+          {/* Opt-outs (deals where user cancelled within 30 days of close) */}
           {!isBDR && (
             <div style={{ flex: "0.8 1 55px", textAlign: "right" as const, minWidth: 45 }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Churned Users</div>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Opt-outs</div>
               <div style={{
                 fontSize: 15, fontWeight: 600, fontFamily: F.m,
-                color: excludedCount && excludedCount > 0 ? C.danger : C.textGhost,
+                color: optOutCount && optOutCount > 0 ? C.warn : C.textGhost,
               }}>
-                {excludedCount && excludedCount > 0 ? excludedCount : "—"}
+                {optOutCount && optOutCount > 0 ? optOutCount : "—"}
               </div>
             </div>
           )}
@@ -217,7 +219,16 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
         </div>
       </div>
 
-      {/* Row 2: Plan vs Actual bar */}
+      {/* Row 2: Quota label above bar */}
+      {!isBDR && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: 44, marginBottom: 4 }}>
+          <div style={{ fontSize: 11, color: C.textSec, fontFamily: F.b, letterSpacing: "0.04em", fontWeight: 600 }}>
+            QUOTA: {fmtK(quota)}
+          </div>
+        </div>
+      )}
+
+      {/* Row 3: Plan vs Actual bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44 }}>
         <div style={{
           flex: 1, height: 6, background: "rgba(255,255,255,0.04)",
@@ -240,11 +251,39 @@ function PlanBar({ name, initials, actual, quota, att, commission, churn, deals,
             minWidth: att > 0 ? 6 : 0,
           }} />
         </div>
-        {/* Quota label */}
+        {/* ARR and deals label - shows gross ARR (closed won total) */}
         <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
-          {isBDR ? `${quota} mtgs` : fmtK(quota)}
+          {isBDR ? `${quota} mtgs` : `${fmtK(grossARR ?? actual)} (${deals} deal${deals !== 1 ? "s" : ""})`}
         </div>
       </div>
+
+      {/* Row 3: Opt-out ARR bar (only shown if there are opt-outs) */}
+      {!isBDR && optOutARR != null && optOutARR > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44, marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+            <div style={{ fontSize: 10, color: C.warn, fontFamily: F.b, letterSpacing: "0.04em", whiteSpace: "nowrap" as const }}>
+              OPT-OUT
+            </div>
+            <div style={{
+              flex: 1, height: 4, background: "rgba(255,255,255,0.04)",
+              borderRadius: 100, overflow: "hidden",
+            }}>
+              {/* Opt-out fill - proportional to quota */}
+              <div style={{
+                height: "100%", borderRadius: 100,
+                width: `${Math.min((optOutARR / quota) * 100, 100)}%`,
+                background: `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})`,
+                transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
+                minWidth: 4,
+              }} />
+            </div>
+          </div>
+          {/* Opt-out value */}
+          <div style={{ fontSize: 10, color: C.warn, fontFamily: F.m, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
+            {fmtK(optOutARR)} ({optOutCount} deal{optOutCount !== 1 ? "s" : ""})
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -286,13 +325,13 @@ export default function ExecDashboard() {
   // ─── Computed KPIs ──────────────────────────────────────────────────────
   const totalNetARR = aeResults.reduce((s, r) => s + (r.netARR || 0), 0);
   const totalGrossARR = aeResults.reduce((s, r) => s + (r.grossARR || 0), 0);
-  const totalChurnARR = aeResults.reduce((s, r) => s + (r.churnARR || 0), 0);
-    const totalChurnCount = aeResults.reduce((s, r) => s + (r.churnCount || 0), 0);
+  const totalOptOutARR = aeResults.reduce((s, r) => s + (r.optOutARR || 0), 0);
+  const totalOptOutCount = aeResults.reduce((s, r) => s + (r.optOutCount || 0), 0);
   const totalQuota = aeResults.reduce((s, r) => s + r.monthlyQuota, 0);
   const totalDeals = aeResults.reduce((s, r) => s + (r.dealCount || 0), 0);
   const teamAttainment = totalQuota > 0 ? totalNetARR / totalQuota : 0;
   const totalComm = aeResults.reduce((s, r) => s + (r.commission || 0), 0) + (bdrResult?.commission || 0);
-  const churnRate = totalGrossARR > 0 ? totalChurnARR / totalGrossARR : 0;
+  const optOutRate = totalGrossARR > 0 ? totalOptOutARR / totalGrossARR : 0;
   const commAsPercent = totalNetARR > 0 ? totalComm / totalNetARR : 0;
 
   const sortedAEs = [...aeResults].sort((a, b) => (b.netARR || 0) - (a.netARR || 0));
@@ -306,7 +345,7 @@ export default function ExecDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: F.b }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');`}</style>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
 
       {/* ─── HEADER ──────────────────────────────────────────────────── */}
       <div style={{
@@ -404,8 +443,8 @@ export default function ExecDashboard() {
               <KPI label="Total Commission" value={fmt(totalComm)} accent large />
             </div>
             <div style={{ padding: "0 20px" }}>
-              <KPI label="Gross Churn" value={fmtPct(churnRate)}
-                sub={totalChurnCount > 0 ? `${totalChurnCount} users \u00B7 ${fmtK(totalChurnARR)}` : "Clean"} large />
+              <KPI label="Opt-outs" value={fmtPct(optOutRate)}
+                sub={totalOptOutCount > 0 ? `${totalOptOutCount} deals · ${fmtK(totalOptOutARR)}` : "None"} large />
             </div>
             <div style={{ padding: "0 20px", borderRight: "none" }}>
               <KPI label="Deals Closed" value={String(totalDeals)} large />
@@ -504,15 +543,16 @@ export default function ExecDashboard() {
                 name={ae.name}
                 initials={ae.initials}
                 actual={ae.netARR || 0}
+                grossARR={ae.grossARR || 0}
                 quota={ae.monthlyQuota}
                 att={ae.attainment || 0}
                 commission={ae.commission || 0}
-                churn={ae.churnARR || 0}
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
                 cwRate={ae.cwRate}
                 cwRateLabel={cwRateLabel}
-                excludedCount={ae.churnCount ?? ae.excludedCount ?? 0}
+                optOutARR={ae.optOutARR}
+                optOutCount={ae.optOutCount}
                 type="ae"
               />
             ))}
@@ -526,7 +566,6 @@ export default function ExecDashboard() {
                 quota={bdrResult.monthlyQuota}
                 att={bdrResult.attainment || 0}
                 commission={bdrResult.commission || 0}
-                churn={0}
                 deals={0}
                 type="bdr"
               />
@@ -640,10 +679,10 @@ export default function ExecDashboard() {
                 <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)" }} />
                 <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Quota</span>
               </div>
-              {totalChurnARR > 0 && (
+              {totalOptOutARR > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 10, height: 3, borderRadius: 2, background: C.danger }} />
-                  <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Churn: {fmtK(totalChurnARR)}</span>
+                  <div style={{ width: 10, height: 3, borderRadius: 2, background: C.warn }} />
+                  <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Opt-outs: {fmtK(totalOptOutARR)}</span>
                 </div>
               )}
             </div>

@@ -4,7 +4,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedUsersFromUsersList, buildChurnAggregation } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
 import { createClient } from "@/lib/supabase/server";
 import { getUserRole } from "@/lib/roles";
@@ -89,6 +89,12 @@ export async function GET(
       closedWonAll, OWNER_MAP, activeAEIds,
     );
 
+    // Build opt-out aggregation: deals where user churned within 30 days of close
+    const optOutAgg = buildOptOutAggregation(
+      churnedUsers, startISO, endISO,
+      wonInMonth, OWNER_MAP, activeAEIds,
+    );
+
     if (repId === "max") {
       let meetings = 0, introCallCount = 0;
       for (const deal of wonInMonth) {
@@ -136,18 +142,23 @@ export async function GET(
     const churnedCount = repChurn.churnCount;
     const churnARR = repChurn.churnARR;
 
-    const netARR = grossARR - churnARR;
+    // Apply opt-out data for this rep
+    const repOptOut = optOutAgg.perAE[repId] || { optOutCount: 0, optOutARR: 0 };
+    const optOutCount = repOptOut.optOutCount;
+    const optOutARR = repOptOut.optOutARR;
+
+    const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
 
-    // Leaderboard uses same user-centric churn data
+    // Leaderboard uses opt-out data (not churn)
     const leaderboard = activeAEs.map((lbAe) => {
       let lbGross = 0;
       for (const deal of wonInMonth) {
         if (OWNER_MAP[getVal(deal, "owner")] !== lbAe.id) continue;
         lbGross += getVal(deal, "value") || 0;
       }
-      const lbChurnARR = churnAgg.perAE[lbAe.id]?.churnARR || 0;
-      return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbChurnARR };
+      const lbOptOutARR = optOutAgg.perAE[lbAe.id]?.optOutARR || 0;
+      return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbOptOutARR };
     }).sort((a, b) => b.netARR - a.netARR);
 
     return NextResponse.json({
@@ -160,6 +171,7 @@ export async function GET(
         closedWon: { count: closedWonCount, arr: closedWonARR },
         closedLost: { count: closedLostCount, arr: closedLostARR },
         churned: { count: churnedCount, arr: churnARR },
+        optOut: { count: optOutCount, arr: optOutARR },
         dealCount: closedWonCount, excludedCount: churnedCount,
       },
       leaderboard,
