@@ -5,7 +5,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window

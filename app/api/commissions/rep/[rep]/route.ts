@@ -7,7 +7,7 @@ import {
 } from "@/lib/commission-config";
 import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;
