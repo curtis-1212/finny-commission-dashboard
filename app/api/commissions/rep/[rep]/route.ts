@@ -89,10 +89,23 @@ export async function GET(
       closedWonAll, OWNER_MAP, activeAEIds,
     );
 
+    // Calculate prior month range for opt-out calculation (opt-outs lag by one month)
+    const selectedDate = new Date(startISO);
+    const priorMonth = selectedDate.getUTCMonth(); // 0-indexed, so this gives prior month
+    const priorYear = priorMonth === 0 
+      ? selectedDate.getUTCFullYear() - 1 
+      : selectedDate.getUTCFullYear();
+    const priorMonthNum = priorMonth === 0 ? 12 : priorMonth;
+    const priorStart = new Date(Date.UTC(priorYear, priorMonthNum - 1, 1));
+    const priorEnd = new Date(Date.UTC(priorYear, priorMonthNum, 0));
+    const priorStartISO = priorStart.toISOString().split("T")[0];
+    const priorEndISO = priorEnd.toISOString().split("T")[0];
+
     // Build opt-out aggregation: deals where user churned within 30 days of close
+    // Uses PRIOR month's churn dates so opt-out totals are finalized
     const optOutAgg = buildOptOutAggregation(
-      churnedUsers, startISO, endISO,
-      wonInMonth, OWNER_MAP, activeAEIds,
+      churnedUsers, priorStartISO, priorEndISO,
+      closedWonAll, OWNER_MAP, activeAEIds,
     );
 
     if (repId === "max") {
