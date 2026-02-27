@@ -292,7 +292,7 @@ export default function RepDashboard() {
               <div style={{ textAlign: "right" as const, marginTop: 4 }}>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 4 }}>Gross → Net</div>
                 <div style={{ fontSize: 12, fontFamily: F.mono, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
-                  {fmt(aeM.grossARR)} <span style={{ color: (aeM.churnARR || 0) > 0 ? "#FCA5A5" : "rgba(255,255,255,0.5)" }}>− {fmt(aeM.churnARR || 0)}</span>
+                  {fmt(aeM.grossARR)} <span style={{ color: (aeM.optOut?.arr || 0) > 0 ? "#FCA5A5" : "rgba(255,255,255,0.5)" }}>− {fmt(aeM.optOut?.arr || 0)}</span>
                 </div>
               </div>
             )}
