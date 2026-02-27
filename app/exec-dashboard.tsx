@@ -362,15 +362,7 @@ export default function ExecDashboard() {
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               {/* FINNY Logo */}
-              <div style={{ 
-                width: 36, height: 36, borderRadius: 8,
-                background: C.primary, 
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path d="M4 4L12 20L20 4" stroke={C.white} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <img src="/logo.png" alt="FINNY" style={{ width: 36, height: 36, borderRadius: 8 }} />
               <div>
                 <div style={{
                   fontSize: 10, fontWeight: 600, color: C.textDim,

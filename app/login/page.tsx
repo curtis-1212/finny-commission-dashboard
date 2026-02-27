@@ -23,19 +23,7 @@ export default function LoginPage() {
       <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "48px 40px", width: "100%", maxWidth: "400px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", border: "1px solid rgba(0,0,0,0.06)" }}>
         {/* FINNY Logo */}
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
-          <div style={{ 
-            display: "inline-flex", 
-            alignItems: "center", 
-            gap: "10px",
-            padding: "12px 20px",
-            background: "#6665E1",
-            borderRadius: "10px",
-          }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M4 4L12 20L20 4" stroke="#FCFCFC" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span style={{ color: "#FCFCFC", fontSize: "20px", fontWeight: 700, letterSpacing: "-0.02em" }}>FINNY</span>
-          </div>
+          <img src="/logo.png" alt="FINNY" style={{ width: 64, height: 64, borderRadius: 12 }} />
         </div>
         
         <h1 style={{ color: "#1B1B1B", fontSize: "22px", fontWeight: 600, marginBottom: "8px", textAlign: "center", letterSpacing: "-0.02em" }}>Revenue Command Center</h1>
