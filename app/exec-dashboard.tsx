@@ -22,30 +22,34 @@ interface BDRResult {
 type RepResult = AEResult | BDRResult;
 interface MonthOption { value: string; label: string }
 
-// ─── Brand: Institutional Exec ──────────────────────────────────────────────
+// ─── Brand: FINNY Style Guide (Light Mode) ──────────────────────────────────
 const C = {
-  bg: "#080E1C",
-  surface: "#0C1324",
-  card: "#101829",
-  cardHover: "#141D30",
-  border: "rgba(255,255,255,0.05)",
-  borderMed: "rgba(255,255,255,0.08)",
-  primary: "#6366F1",
-  primaryMuted: "#4F46E5",
-  accent: "#10B981",
+  bg: "#FAFBFD",
+  surface: "#FFFFFF",
+  card: "#FFFFFF",
+  cardHover: "#F5F6FA",
+  border: "rgba(0,0,0,0.06)",
+  borderMed: "rgba(0,0,0,0.10)",
+  primary: "#6665E1",        // FINNY Purple
+  primaryMuted: "#5554C8",
+  primaryLight: "#8584E8",
+  primaryFaint: "#EEEEFF",
+  accent: "#10B981",         // Green for light mode (lime doesn't work well)
   accentMuted: "#059669",
+  accentDark: "#047857",
   warn: "#F59E0B",
   warnMuted: "#D97706",
   danger: "#EF4444",
   dangerMuted: "#DC2626",
-  text: "#E2E8F0",
-  textSec: "#94A3B8",
-  textDim: "#64748B",
-  textGhost: "#475569",
+  text: "#1B1B1B",           // Off Black
+  textSec: "#4A4A5A",
+  textDim: "#6E6E80",
+  textGhost: "#9A9AAA",
+  white: "#FCFCFC",
 };
 const F = {
-  d: "'Instrument Sans', 'DM Sans', system-ui, sans-serif",
-  b: "'DM Sans', system-ui, sans-serif",
+  d: "'Inter', system-ui, sans-serif",
+  b: "'Inter', system-ui, sans-serif",
   m: "'JetBrains Mono', 'SF Mono', monospace",
 };
 
@@ -65,18 +69,16 @@ function getCurrentMonthValue() {
 
 // ─── Attainment color logic ─────────────────────────────────────────────────
 function attColor(att: number): string {
-  if (att >= 1.2) return C.accent;
   if (att >= 1.0) return C.accent;
   if (att >= 0.8) return C.text;
   if (att >= 0.6) return C.warn;
   return C.danger;
 }
 function attBg(att: number): string {
-  if (att >= 1.2) return `${C.accent}15`;
-  if (att >= 1.0) return `${C.accent}10`;
+  if (att >= 1.0) return `${C.accent}18`;
   if (att >= 0.8) return "transparent";
-  if (att >= 0.6) return `${C.warn}10`;
-  return `${C.danger}10`;
+  if (att >= 0.6) return `${C.warn}12`;
+  return `${C.danger}12`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,7 +128,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
   const barColor = att >= 1.0
     ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
     : att >= 0.8
-      ? `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`
+      ? `linear-gradient(90deg, ${C.primary}, ${C.primaryLight})`
       : att >= 0.6
         ? `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})`
         : `linear-gradient(90deg, ${C.danger}, ${C.dangerMuted})`;
@@ -231,7 +233,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
       {/* Row 3: Plan vs Actual bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44 }}>
         <div style={{
-          flex: 1, height: 6, background: "rgba(255,255,255,0.04)",
+          flex: 1, height: 6, background: "rgba(0,0,0,0.08)",
           borderRadius: 100, position: "relative", overflow: "visible",
         }}>
           {/* Quota marker */}
@@ -239,7 +241,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             position: "absolute",
             left: `${Math.min(100 / Math.max(pct, 1), 100)}%`,
             top: -2, width: 1, height: 10,
-            background: "rgba(255,255,255,0.2)",
+            background: "rgba(0,0,0,0.2)",
             zIndex: 2,
           }} />
           {/* Fill */}
@@ -265,7 +267,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
               OPT-OUT
             </div>
             <div style={{
-              flex: 1, height: 4, background: "rgba(255,255,255,0.04)",
+              flex: 1, height: 4, background: "rgba(0,0,0,0.08)",
               borderRadius: 100, overflow: "hidden",
             }}>
               {/* Opt-out fill - proportional to quota */}
@@ -345,7 +347,7 @@ export default function ExecDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: F.b }}>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
 
       {/* ─── HEADER ──────────────────────────────────────────────────── */}
       <div style={{
@@ -359,7 +361,16 @@ export default function ExecDashboard() {
             padding: "18px 0 14px",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <img src="/logo.png" alt="FINNY" style={{ width: 28, height: 28, borderRadius: 6 }} />
+              {/* FINNY Logo */}
+              <div style={{ 
+                width: 36, height: 36, borderRadius: 8,
+                background: C.primary, 
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 4L12 20L20 4" stroke={C.white} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
               <div>
                 <div style={{
                   fontSize: 10, fontWeight: 600, color: C.textDim,
@@ -575,13 +586,13 @@ export default function ExecDashboard() {
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "14px 20px",
-              background: "rgba(255,255,255,0.02)",
+              background: "rgba(0,0,0,0.02)",
               borderTop: `1px solid ${C.borderMed}`,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: 8,
-                  background: "rgba(255,255,255,0.04)",
+                  background: "rgba(0,0,0,0.05)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 11, fontWeight: 700, color: C.textDim, fontFamily: F.b,
                 }}>Σ</div>
@@ -623,12 +634,12 @@ export default function ExecDashboard() {
             </div>
 
             {/* Quota bar */}
-            <div style={{ position: "relative", height: 40, background: "rgba(255,255,255,0.03)", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ position: "relative", height: 40, background: "rgba(0,0,0,0.06)", borderRadius: 8, overflow: "hidden" }}>
               {/* Quota fill (background) */}
               <div style={{
                 position: "absolute", top: 0, left: 0, height: "100%",
                 width: "100%",
-                background: `repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 20%)`,
+                background: `repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 20%)`,
                 borderRadius: 8,
               }} />
               {/* Actual fill */}
@@ -652,7 +663,7 @@ export default function ExecDashboard() {
                 position: "absolute",
                 left: `${100 / 1.5}%`,
                 top: 0, width: 2, height: "100%",
-                background: "rgba(255,255,255,0.25)",
+                background: "rgba(0,0,0,0.2)",
                 zIndex: 2,
               }} />
               {/* Quota label */}
@@ -676,7 +687,7 @@ export default function ExecDashboard() {
                 <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Actual</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.25)" }} />
+                <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(0,0,0,0.2)" }} />
                 <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Quota</span>
               </div>
               {totalOptOutARR > 0 && (

@@ -29,18 +29,20 @@ function getCurrentMonthValue() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-// ─── FINNY Brand ────────────────────────────────────────────────────────────
+// ─── FINNY Brand (Style Guide - Light Mode) ─────────────────────────────────
 const B = {
-  primary: "#6366F1",
-  primaryLight: "#818CF8",
-  primaryFaint: "#EEF2FF",
-  accent: "#10B981",
+  primary: "#6665E1",        // FINNY Purple
+  primaryLight: "#8584E8",
+  primaryFaint: "#EEEEFF",
+  accent: "#10B981",         // Green for light mode
+  accentDark: "#059669",
   danger: "#EF4444",
+  warn: "#F59E0B",
   bg: "#FAFBFD",
   card: "#FFFFFF",
-  text: "#1E293B",
-  muted: "#64748B",
-  faint: "#94A3B8",
+  text: "#1B1B1B",           // Off Black
+  muted: "#5A5A6A",
+  faint: "#8A8A9A",
   border: "#E2E8F0",
   borderLight: "#F1F5F9",
 };
@@ -70,8 +72,8 @@ function getMonthName() {
 }
 
 const F = {
-  display: "'Instrument Sans', 'DM Sans', system-ui, sans-serif",
-  body: "'DM Sans', system-ui, sans-serif",
+  display: "'Inter', system-ui, sans-serif",
+  body: "'Inter', system-ui, sans-serif",
   mono: "'JetBrains Mono', 'SF Mono', monospace",
 };
 
@@ -182,7 +184,7 @@ export default function RepDashboard() {
   return (
     <div style={{ minHeight: "100vh", background: B.bg, position: "relative", overflow: "hidden" }}>
       <style>{KF}</style>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
 
       {/* Ambient */}
       <div style={{ position: "fixed", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: `radial-gradient(circle, ${B.primary}06 0%, transparent 60%)`, pointerEvents: "none" }} />

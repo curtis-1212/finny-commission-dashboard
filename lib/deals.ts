@@ -61,7 +61,7 @@ function getDealDate(deal: any): string | null {
   return String(closeDate).slice(0, 10);
 }
 
-function getDemoHeldDate(deal: any): string | null {
+export function getDemoHeldDate(deal: any): string | null {
   const d = getVal(deal, DEMO_HELD_DATE_ATTR);
   if (!d) return null;
   return String(d).slice(0, 10);
@@ -357,11 +357,16 @@ export function isChurnedDeal(deal: any, churnedRecordIds: Set<string>): boolean
 
 // ─── Paginated Attio query ──────────────────────────────────────────────────
 
-async function fetchAllDeals(filter: object): Promise<any[]> {
+export async function fetchAllDeals(filter: object): Promise<any[]> {
   let allDeals: any[] = [];
   let offset = 0;
   while (true) {
-    const page = await attioQuery("deals", { filter, limit: PAGE_SIZE, offset });
+    // Only include filter in query body if it has properties (empty filter returns 0 results)
+    const hasFilter = Object.keys(filter).length > 0;
+    const queryBody = hasFilter 
+      ? { filter, limit: PAGE_SIZE, offset }
+      : { limit: PAGE_SIZE, offset };
+    const page = await attioQuery("deals", queryBody);
     const records = page?.data || [];
     allDeals = allDeals.concat(records);
     if (records.length < PAGE_SIZE) break;
@@ -541,8 +546,9 @@ export async function fetchMonthData(
     };
   });
 
+  // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
   let maxMeetings = 0;
-  for (const deal of wonInMonth) {
+  for (const deal of demoInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
     if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
   }

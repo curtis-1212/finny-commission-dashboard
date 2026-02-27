@@ -1,35 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import {
   AE_DATA, BDR_DATA, calcAECommission, calcBDRCommission,
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
-import { createClient } from "@/lib/supabase/server";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;
-
-const PAGE_SIZE = 500;
 
 function getDealDate(deal: any): string | null {
   const closeDate = getVal(deal, "close_date");
   if (!closeDate) return null;
   return String(closeDate).slice(0, 10);
-}
-
-async function fetchAllDeals(filter: object): Promise<any[]> {
-  let allDeals: any[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await attioQuery("deals", { filter, limit: PAGE_SIZE, offset });
-    const records = page?.data || [];
-    allDeals = allDeals.concat(records);
-    if (records.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return allDeals;
 }
 
 export async function GET(
@@ -39,12 +25,11 @@ export async function GET(
   const repId = params.rep;
   const monthParam = request.nextUrl.searchParams.get("month");
 
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const role = getUserRole(user.email);
+  const role = getUserRole(session.user.email);
   if (!role) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -70,6 +55,8 @@ export async function GET(
     const closedLostAll = await fetchAllDeals({ stage: "Closed Lost" });
     let introCallAll: any[] = [];
     try { introCallAll = await fetchAllDeals({ stage: "Introductory Call" }); } catch {}
+    let toBeOnboardedAll: any[] = [];
+    try { toBeOnboardedAll = await fetchAllDeals({ stage: "To Be Onboarded" }); } catch {}
 
     const filterByMonth = (deals: any[]) => deals.filter((deal: any) => {
       const d = getDealDate(deal);
@@ -109,8 +96,16 @@ export async function GET(
     );
 
     if (repId === "max") {
+      // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
+      const allDeals = await fetchAllDeals({});
+      const demoInMonth = allDeals.filter((deal: any) => {
+        const d = getDemoHeldDate(deal);
+        if (!d) return false;
+        return d >= startISO && d <= endISO;
+      });
+      
       let meetings = 0, introCallCount = 0;
-      for (const deal of wonInMonth) {
+      for (const deal of demoInMonth) {
         if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) meetings += 1;
       }
       for (const deal of introInMonth) {
@@ -131,6 +126,7 @@ export async function GET(
     // Count ALL Closed Won deals as gross ARR (no deal-level churn exclusion)
     let grossARR = 0, closedWonCount = 0, closedWonARR = 0;
     let closedLostCount = 0, closedLostARR = 0, introCallCount = 0;
+    let toBeOnboardedCount = 0, toBeOnboardedARR = 0;
 
     for (const deal of wonInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
@@ -148,6 +144,13 @@ export async function GET(
     for (const deal of introInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       introCallCount += 1;
+    }
+
+    // To Be Onboarded: current pipeline deals (not filtered by month)
+    for (const deal of toBeOnboardedAll) {
+      if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
+      toBeOnboardedCount += 1;
+      toBeOnboardedARR += getVal(deal, "value") || 0;
     }
 
     // Apply user-centric churn for this rep
@@ -180,7 +183,7 @@ export async function GET(
         grossARR, churnARR, netARR, monthlyQuota: ae.monthlyQuota, attainment, commission,
         tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
         introCallsScheduled: introCallCount,
-        toBeOnboarded: { count: 0, arr: 0 },
+        toBeOnboarded: { count: toBeOnboardedCount, arr: toBeOnboardedARR },
         closedWon: { count: closedWonCount, arr: closedWonARR },
         closedLost: { count: closedLostCount, arr: closedLostARR },
         churned: { count: churnedCount, arr: churnARR },

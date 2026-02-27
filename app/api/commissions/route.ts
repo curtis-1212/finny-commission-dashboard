@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import {
   AE_DATA, BDR_DATA,
   getMonthRange, parseMonthParam, getAvailableMonths,
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
-import { createClient } from "@/lib/supabase/server";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window
 
 export async function GET(request: NextRequest) {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const role = getUserRole(user.email);
+  const role = getUserRole(session.user.email);
   if (!role || role.type !== "exec") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

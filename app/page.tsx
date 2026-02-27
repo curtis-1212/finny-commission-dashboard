@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserRole } from "@/lib/roles";
 import ExecDashboard from "./exec-dashboard";
 
 export default async function HomePage() {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getServerSession(authOptions);
 
-  if (!user) redirect("/login");
+  if (!session?.user?.email) redirect("/login");
 
-  const role = getUserRole(user.email);
+  const role = getUserRole(session.user.email);
 
   if (!role) redirect("/login");
 
