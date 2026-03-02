@@ -39,9 +39,9 @@ Copy `.env.local` and fill in your values. For Vercel, add all variables in Sett
 
 Required env vars:
 - `ATTIO_API_KEY` — read-only Attio API key
-- `ATTIO_JASON_UUID`, `ATTIO_KELCY_UUID`, `ATTIO_MAX_UUID`
-- `TOKEN_EXEC`, `TOKEN_KELCY`, `TOKEN_JASON`, `TOKEN_MAX`
-- `SLACK_WEBHOOK_URL` — Slack incoming webhook
+- `ATTIO_JASON_UUID`, `ATTIO_KELCY_UUID`, `ATTIO_AUSTIN_UUID`, `ATTIO_ROY_UUID`, `ATTIO_MAX_UUID` — Attio workspace member (actor) IDs so deal owner is mapped to each rep; without these, that rep’s deals won’t appear
+- NextAuth: `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `SLACK_WEBHOOK_URL` — Slack incoming webhook (optional)
 - `CRON_SECRET` — for Vercel cron auth
 
 ### 3. Deploy
@@ -65,11 +65,14 @@ npx vercel --prod
 
 ### 4. Share dashboard links
 
-DM each person their unique link:
-- **You:** `https://your-app.vercel.app/?token=EXEC_TOKEN`
-- **Kelcy:** `https://your-app.vercel.app/dashboard/kelcy?token=KELCY_TOKEN`
-- **Jason:** `https://your-app.vercel.app/dashboard/jason?token=JASON_TOKEN`
-- **Max:** `https://your-app.vercel.app/dashboard/max?token=MAX_TOKEN`
+After signing in with Google (@finny.com), users are redirected by role:
+- **Exec:** `/` (all reps)
+- **Roy:** `/dashboard/roy`
+- **Kelcy:** `/dashboard/kelcy`
+- **Jason:** `/dashboard/jason`
+- **Max:** `/dashboard/max`
+
+Roy can sign in with `roy@finny.com` or `roy.kasten@finny.com`. For his **deals** to show, set `ATTIO_ROY_UUID` to his Attio workspace member ID (same as “Deal owner” in Attio; find it in the Attio API or workspace member list).
 
 ### 5. Test cron
 

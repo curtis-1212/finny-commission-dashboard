@@ -4,6 +4,7 @@ const REP_EMAILS: Record<string, string> = {
   "jason@finny.com": "jason",
   "kelcy@finny.com": "kelcy",
   "roy@finny.com": "roy",
+  "roy.kasten@finny.com": "roy",
   "max@finny.com": "max",
 };
 
