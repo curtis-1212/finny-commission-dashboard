@@ -76,22 +76,24 @@ export async function GET(
       closedWonAll, OWNER_MAP, activeAEIds,
     );
 
-    // Calculate prior month range for opt-out calculation (opt-outs lag by one month)
+    // Opt-out aggregation: for a given reporting month, opt-outs are driven by
+    // churn_request_date in the previous calendar month. A deal is an opt-out
+    // for the reporting month if its linked user has churn_request_date in that
+    // prior month window and the churn date is within 30 days of the deal's
+    // close_date.
     const selectedDate = new Date(startISO);
-    const priorMonth = selectedDate.getUTCMonth(); // 0-indexed, so this gives prior month
-    const priorYear = priorMonth === 0 
-      ? selectedDate.getUTCFullYear() - 1 
+    const priorMonth = selectedDate.getUTCMonth(); // 0-indexed, gives prior month
+    const priorYear = priorMonth === 0
+      ? selectedDate.getUTCFullYear() - 1
       : selectedDate.getUTCFullYear();
     const priorMonthNum = priorMonth === 0 ? 12 : priorMonth;
     const priorStart = new Date(Date.UTC(priorYear, priorMonthNum - 1, 1));
     const priorEnd = new Date(Date.UTC(priorYear, priorMonthNum, 0));
-    const priorStartISO = priorStart.toISOString().split("T")[0];
-    const priorEndISO = priorEnd.toISOString().split("T")[0];
+    const churnWindowStart = priorStart.toISOString().split("T")[0];
+    const churnWindowEnd = priorEnd.toISOString().split("T")[0];
 
-    // Build opt-out aggregation: deals where user churned within 30 days of close
-    // Uses PRIOR month's churn dates so opt-out totals are finalized
     const optOutAgg = buildOptOutAggregation(
-      churnedUsers, priorStartISO, priorEndISO,
+      churnedUsers, churnWindowStart, churnWindowEnd,
       closedWonAll, OWNER_MAP, activeAEIds,
     );
 
