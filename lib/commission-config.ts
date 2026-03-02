@@ -26,11 +26,13 @@ export interface BDRConfig {
   baseSalary: number;
   variable: number;
   ote: number;
-  monthlyQuota: number;
+  monthlyQuota: number; // full-performance quota (months 4+)
   monthlyTargetVariable: number;
   perMeetingRate: number;
   acceleratorRate: number;
   acceleratorThreshold: number;
+  rampQuotas: [number, number, number]; // month 1, 2, 3
+  startDate: string; // ISO "YYYY-MM-DD"
   type: "bdr";
 }
 
@@ -92,8 +94,10 @@ export const BDR_DATA: BDRConfig = {
   id: "max", name: "Max Zajec", role: "Founding BDR",
   initials: "MZ", color: "#8B5CF6",
   baseSalary: 70000, variable: 10000, ote: 80000,
-  monthlyQuota: 15, monthlyTargetVariable: 833.33,
+  monthlyQuota: 25, monthlyTargetVariable: 833.33,
   perMeetingRate: 33, acceleratorRate: 40, acceleratorThreshold: 1.25,
+  rampQuotas: [15, 20, 25],
+  startDate: "2025-11-01",
   type: "bdr",
 };
 
@@ -128,17 +132,71 @@ export function calcAECommission(
   return { commission, attainment, tierBreakdown };
 }
 
-export function calcBDRCommission(netMeetings: number) {
-  const bdr = BDR_DATA;
-  const attainment = bdr.monthlyQuota > 0 ? netMeetings / bdr.monthlyQuota : 0;
-  let commission: number;
-  if (attainment <= bdr.acceleratorThreshold) {
-    commission = netMeetings * bdr.perMeetingRate;
-  } else {
-    const baseMeetings = Math.floor(bdr.monthlyQuota * bdr.acceleratorThreshold);
-    commission = baseMeetings * bdr.perMeetingRate + (netMeetings - baseMeetings) * bdr.acceleratorRate;
+function getBdrTenureMonth(bdr: BDRConfig, selectedMonth: string): number {
+  const [year, month] = selectedMonth.split("-").map(Number);
+  const [startYear, startMonth] = bdr.startDate.split("-").map(Number);
+  if (!year || !month || !startYear || !startMonth) return 0;
+  return (year - startYear) * 12 + (month - startMonth) + 1;
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function getBdrQuotaForMonth(bdr: BDRConfig, selectedMonth: string, tenureMonth: number): number {
+  if (tenureMonth <= 0) return 0;
+  const [year, month] = selectedMonth.split("-").map(Number);
+  if (!year || !month) return 0;
+
+  if (tenureMonth === 1) {
+    const [, , startDayStr] = bdr.startDate.split("-");
+    const startDay = Number(startDayStr);
+    const daysInMonth = getDaysInMonth(year, month);
+    if (!startDay || !daysInMonth) return bdr.rampQuotas[0];
+    const daysLeft = Math.max(0, Math.min(daysInMonth - startDay + 1, daysInMonth));
+    const factor = daysInMonth > 0 ? daysLeft / daysInMonth : 0;
+    const prorated = bdr.rampQuotas[0] * factor;
+    return Math.ceil(prorated);
   }
-  return { commission, attainment };
+
+  if (tenureMonth === 2) return bdr.rampQuotas[1];
+  if (tenureMonth === 3) return bdr.rampQuotas[2];
+  return bdr.monthlyQuota;
+}
+
+function calcBdrRampCommission(bdr: BDRConfig, netMeetings: number, quota: number): number {
+  if (quota <= 0) return 0;
+  if (netMeetings < quota) return 0;
+  const extraMeetings = netMeetings - quota;
+  return bdr.monthlyTargetVariable + extraMeetings * bdr.perMeetingRate;
+}
+
+function calcBdrFullCommission(bdr: BDRConfig, netMeetings: number): number {
+  if (netMeetings <= 0) return 0;
+  const baseMeetings = Math.floor(bdr.monthlyQuota * bdr.acceleratorThreshold);
+  if (netMeetings <= baseMeetings) {
+    return netMeetings * bdr.perMeetingRate;
+  }
+  return baseMeetings * bdr.perMeetingRate
+    + (netMeetings - baseMeetings) * bdr.acceleratorRate;
+}
+
+export function calcBDRCommission(netMeetings: number, selectedMonth: string) {
+  const bdr = BDR_DATA;
+  const tenureMonth = getBdrTenureMonth(bdr, selectedMonth);
+  const monthlyQuota = getBdrQuotaForMonth(bdr, selectedMonth, tenureMonth);
+
+  let commission: number;
+  if (tenureMonth <= 0 || monthlyQuota <= 0) {
+    commission = 0;
+  } else if (tenureMonth <= 3) {
+    commission = calcBdrRampCommission(bdr, netMeetings, monthlyQuota);
+  } else {
+    commission = calcBdrFullCommission(bdr, netMeetings);
+  }
+
+  const attainment = monthlyQuota > 0 ? netMeetings / monthlyQuota : 0;
+  return { commission, attainment, monthlyQuota, tenureMonth };
 }
 
 export const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
