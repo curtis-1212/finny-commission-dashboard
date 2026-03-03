@@ -5,7 +5,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, type DealDetail } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
 import { authOptions } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
@@ -129,13 +129,17 @@ export async function GET(
     let grossARR = 0, closedWonCount = 0, closedWonARR = 0;
     let closedLostCount = 0, closedLostARR = 0, introCallCount = 0;
     let toBeOnboardedCount = 0, toBeOnboardedARR = 0;
+    const closedWonDealDetails: DealDetail[] = [];
 
     for (const deal of wonInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       const value = getVal(deal, "value") || 0;
+      const closeDate = getDealDate(deal) || "";
+      const dealName = getVal(deal, "name") || "Unnamed Deal";
       grossARR += value;
       closedWonCount += 1;
       closedWonARR += value;
+      closedWonDealDetails.push({ name: String(dealName), value, closeDate });
     }
 
     for (const deal of lostInMonth) {
@@ -161,9 +165,10 @@ export async function GET(
     const churnARR = repChurn.churnARR;
 
     // Apply opt-out data for this rep
-    const repOptOut = optOutAgg.perAE[repId] || { optOutCount: 0, optOutARR: 0 };
+    const repOptOut = optOutAgg.perAE[repId] || { optOutCount: 0, optOutARR: 0, deals: [] };
     const optOutCount = repOptOut.optOutCount;
     const optOutARR = repOptOut.optOutARR;
+    const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
     const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
@@ -191,6 +196,8 @@ export async function GET(
         churned: { count: churnedCount, arr: churnARR },
         optOut: { count: optOutCount, arr: optOutARR },
         dealCount: closedWonCount, excludedCount: churnedCount,
+        closedWonDeals: closedWonDealDetails,
+        optOutDeals: optOutDealDetails,
       },
       leaderboard,
       meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },

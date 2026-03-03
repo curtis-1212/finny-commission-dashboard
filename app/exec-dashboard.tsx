@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+interface DealDetail { name: string; value: number; closeDate: string }
 interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
@@ -12,6 +13,8 @@ interface AEResult {
   cwRate?: number | null;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
+  closedWonDeals?: DealDetail[];
+  optOutDeals?: DealDetail[];
 }
 interface BDRResult {
   id: string; name: string; role: string; initials: string; color: string; type: "bdr";
@@ -118,11 +121,12 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount, onClick }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
   demoCount?: number; cwRate?: number | null; cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
+  onClick?: () => void;
 }) {
   const pct = Math.min(att, 1.5);
   const barColor = att >= 1.0
@@ -140,7 +144,9 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
       padding: "16px 20px",
       borderBottom: `1px solid ${C.border}`,
       transition: "background 0.15s",
+      cursor: onClick ? "pointer" : undefined,
     }}
+      onClick={onClick}
       onMouseEnter={(e) => (e.currentTarget.style.background = C.cardHover)}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
@@ -291,6 +297,89 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DEAL LIST MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function ExecDealListModal({ repName, closedWonDeals, optOutDeals, onClose }: {
+  repName: string; closedWonDeals: DealDetail[]; optOutDeals: DealDetail[]; onClose: () => void;
+}) {
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.35)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      backdropFilter: "blur(4px)",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: C.card, borderRadius: 16, border: `1px solid ${C.border}`,
+        boxShadow: "0 8px 40px rgba(0,0,0,.12)", width: "100%", maxWidth: 640,
+        maxHeight: "80vh", display: "flex", flexDirection: "column" as const,
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: F.d, letterSpacing: "-0.02em" }}>
+            {repName} — Deal Breakdown
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.textGhost, padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+        {/* Body - two columns */}
+        <div style={{ overflow: "auto", padding: "16px 24px 24px", display: "flex", gap: 24 }}>
+          {/* Closed Won column */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 12 }}>
+              Closed Won
+            </div>
+            {closedWonDeals.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.textGhost, fontFamily: F.b, padding: "8px 0" }}>No deals</div>
+            ) : (
+              closedWonDeals.map((d, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0", borderBottom: i < closedWonDeals.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, marginTop: 2 }}>{d.closeDate}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, fontFamily: F.m, marginLeft: 8, flexShrink: 0 }}>{fmtK(d.value)}</div>
+                </div>
+              ))
+            )}
+            {closedWonDeals.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${C.borderMed}`, marginTop: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.primary, fontFamily: F.m }}>{fmt(closedWonDeals.reduce((s, d) => s + d.value, 0))}</span>
+              </div>
+            )}
+          </div>
+          {/* Divider */}
+          <div style={{ width: 1, background: C.border, flexShrink: 0 }} />
+          {/* Opt-Out column */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 12 }}>
+              Prior Month Opt-Outs
+            </div>
+            {optOutDeals.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.textGhost, fontFamily: F.b, padding: "8px 0" }}>None</div>
+            ) : (
+              optOutDeals.map((d, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0", borderBottom: i < optOutDeals.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, marginTop: 2 }}>{d.closeDate}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.danger, fontFamily: F.m, marginLeft: 8, flexShrink: 0 }}>-{fmtK(d.value)}</div>
+                </div>
+              ))
+            )}
+            {optOutDeals.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${C.borderMed}`, marginTop: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.danger, fontFamily: F.m }}>-{fmt(optOutDeals.reduce((s, d) => s + d.value, 0))}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // EXEC DASHBOARD — REVENUE COMMAND CENTER
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ExecDashboard() {
@@ -305,6 +394,7 @@ export default function ExecDashboard() {
 
   const [aeResults, setAeResults] = useState<AEResult[]>([]);
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
+  const [dealModalAE, setDealModalAE] = useState<AEResult | null>(null);
 
   const fetchLive = useCallback(async () => {
     setLoading(true); setError("");
@@ -557,6 +647,7 @@ export default function ExecDashboard() {
                 optOutARR={ae.optOutARR}
                 optOutCount={ae.optOutCount}
                 type="ae"
+                onClick={() => setDealModalAE(ae)}
               />
             ))}
 
@@ -693,6 +784,16 @@ export default function ExecDashboard() {
         )}
 
       </div>
+
+      {/* ─── Deal list modal ────────────────────────────────────────── */}
+      {dealModalAE && (
+        <ExecDealListModal
+          repName={dealModalAE.name}
+          closedWonDeals={dealModalAE.closedWonDeals || []}
+          optOutDeals={dealModalAE.optOutDeals || []}
+          onClose={() => setDealModalAE(null)}
+        />
+      )}
 
       {/* ─── Footer ────────────────────────────────────────────────── */}
       <div style={{

@@ -53,7 +53,7 @@ export const AE_DATA: AEConfig[] = [
     id: "kelcy", name: "Kelcy Koenig", role: "Founding Account Executive",
     initials: "KK", color: "#F59E0B",
     baseSalary: 168000, variable: 72000, ote: 240000,
-    monthlyQuota: 150000, annualQuota: 1800000,
+    monthlyQuota: 166666.67, annualQuota: 2000000,
     tiers: [
       { label: "0-100%", ceiling: 1.0, rate: 0.04 },
       { label: "100-120%", ceiling: 1.2, rate: 0.05 },
@@ -79,7 +79,7 @@ export const AE_DATA: AEConfig[] = [
     id: "roy", name: "Roy Kasten", role: "Account Executive",
     initials: "RK", color: "#EF4444",
     baseSalary: 0, variable: 0, ote: 0,
-    monthlyQuota: 166666.67, annualQuota: 2000000,
+    monthlyQuota: 208333.33, annualQuota: 2500000,
     tiers: [
       { label: "0-100%", ceiling: 1.0, rate: 0.09 },
       { label: "100-120%", ceiling: 1.2, rate: 0.11 },
