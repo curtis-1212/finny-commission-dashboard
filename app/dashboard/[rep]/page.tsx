@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
 interface StageCount { count: number; arr: number }
+interface DealDetail { name: string; value: number; closeDate: string }
 interface AEMetrics {
   grossARR: number; churnARR: number; netARR: number;
   monthlyQuota: number; attainment: number; commission: number;
@@ -13,6 +14,8 @@ interface AEMetrics {
   toBeOnboarded: StageCount; closedWon: StageCount;
   closedLost: StageCount; churned: StageCount;
   optOut?: StageCount;
+  closedWonDeals?: DealDetail[];
+  optOutDeals?: DealDetail[];
 }
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
@@ -102,6 +105,84 @@ function PRow({ icon, label, count, arr, hl, neg }: {
   );
 }
 
+// ─── DealListModal ─────────────────────────────────────────────────────────
+function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
+  closedWonDeals: DealDetail[]; optOutDeals: DealDetail[]; onClose: () => void;
+}) {
+  const fmtD = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.35)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      backdropFilter: "blur(4px)",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: B.card, borderRadius: 20, border: `1px solid ${B.border}`,
+        boxShadow: "0 8px 40px rgba(0,0,0,.12)", width: "100%", maxWidth: 520,
+        maxHeight: "80vh", display: "flex", flexDirection: "column" as const,
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 22px 14px", borderBottom: `1px solid ${B.borderLight}` }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.02em" }}>Deal Breakdown</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: B.faint, padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+        {/* Body */}
+        <div style={{ overflow: "auto", padding: "16px 22px 22px", display: "flex", flexDirection: "column" as const, gap: 20 }}>
+          {/* Closed Won */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+              Closed Won — Counting Towards Quota
+            </div>
+            {closedWonDeals.length === 0 ? (
+              <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No closed won deals this month</div>
+            ) : (
+              closedWonDeals.map((d, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < closedWonDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: B.primary, fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>{fmtD(d.value)}</div>
+                </div>
+              ))
+            )}
+            {closedWonDeals.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${B.border}`, marginTop: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: B.primary, fontFamily: F.mono }}>{fmtD(closedWonDeals.reduce((s, d) => s + d.value, 0))}</span>
+              </div>
+            )}
+          </div>
+          {/* Opt-Outs */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+              Prior Month Opt-Outs — Netting Against Quota
+            </div>
+            {optOutDeals.length === 0 ? (
+              <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No opt-out deals this month</div>
+            ) : (
+              optOutDeals.map((d, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < optOutDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#EF4444", fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>-{fmtD(d.value)}</div>
+                </div>
+              ))
+            )}
+            {optOutDeals.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${B.border}`, marginTop: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#EF4444", fontFamily: F.mono }}>-{fmtD(optOutDeals.reduce((s, d) => s + d.value, 0))}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function RepDashboard() {
   const params = useParams();
@@ -116,6 +197,7 @@ export default function RepDashboard() {
   const [error, setError] = useState("");
   const [anim, setAnim] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [showDeals, setShowDeals] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -313,8 +395,17 @@ export default function RepDashboard() {
 
         {/* ─── Pipeline ───────────────────────────────────────────── */}
         <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "8px 22px 6px", marginTop: 12, ...an("0.3s") }}>
-          <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, padding: "16px 0 6px" }}>
-            {isAE ? "Pipeline Breakdown" : "Activity"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 0 6px" }}>
+            <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>
+              {isAE ? "Pipeline Breakdown" : "Activity"}
+            </div>
+            {isAE && (aeM.closedWon.count > 0 || (aeM.optOut?.count || 0) > 0) && (
+              <button onClick={() => setShowDeals(true)} style={{
+                background: B.primaryFaint, border: `1px solid ${B.primary}25`, borderRadius: 8,
+                padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                color: B.primary, fontFamily: F.body, transition: "all 0.15s",
+              }}>View Deals</button>
+            )}
           </div>
           {isAE ? (
             <>
@@ -334,6 +425,15 @@ export default function RepDashboard() {
             </>
           )}
         </div>
+
+        {/* ─── Deal list modal ───────────────────────────────────── */}
+        {showDeals && isAE && (
+          <DealListModal
+            closedWonDeals={aeM.closedWonDeals || []}
+            optOutDeals={aeM.optOutDeals || []}
+            onClose={() => setShowDeals(false)}
+          />
+        )}
 
         {/* ─── Days grid (current month only) ─────────────────────── */}
         {isCur && (

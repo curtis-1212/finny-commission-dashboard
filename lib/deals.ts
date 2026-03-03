@@ -49,7 +49,13 @@ export interface ChurnAggregation {
 }
 
 export interface OptOutAggregation {
-  perAE: Record<string, { optOutCount: number; optOutARR: number }>;
+  perAE: Record<string, { optOutCount: number; optOutARR: number; deals: DealDetail[] }>;
+}
+
+export interface DealDetail {
+  name: string;
+  value: number;
+  closeDate: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -276,7 +282,7 @@ export function buildOptOutAggregation(
     }
   }
 
-  const perAE: Record<string, { optOutCount: number; optOutARR: number }> = {};
+  const perAE: Record<string, { optOutCount: number; optOutARR: number; deals: DealDetail[] }> = {};
 
   for (const deal of wonInMonth) {
     const closeDate = getDealDate(deal);
@@ -317,9 +323,11 @@ export function buildOptOutAggregation(
     if (!aeId || !activeAEIds.has(aeId)) continue;
 
     const value = getVal(deal, "value") || 0;
-    if (!perAE[aeId]) perAE[aeId] = { optOutCount: 0, optOutARR: 0 };
+    const dealName = getVal(deal, "name") || "Unnamed Deal";
+    if (!perAE[aeId]) perAE[aeId] = { optOutCount: 0, optOutARR: 0, deals: [] };
     perAE[aeId].optOutCount += 1;
     perAE[aeId].optOutARR += value;
+    perAE[aeId].deals.push({ name: String(dealName), value, closeDate });
   }
 
   const totalOptOuts = Object.values(perAE).reduce((sum, v) => sum + v.optOutCount, 0);
@@ -390,6 +398,8 @@ export interface MonthData {
     cwRate: number | null;
     attainment: number; commission: number;
     tierBreakdown: { label?: string; amount: number }[];
+    closedWonDeals: DealDetail[];
+    optOutDeals: DealDetail[];
   }[];
   bdrResult: {
     id: string; name: string; role: string; initials: string; color: string;
@@ -461,6 +471,7 @@ export async function fetchMonthData(
   });
 
   const agg: Record<string, AERollup> = {};
+  const closedWonDealsByAE: Record<string, DealDetail[]> = {};
   for (const ae of activeAEs) {
     agg[ae.id] = {
       grossARR: 0, churnARR: 0, netARR: 0,
@@ -468,6 +479,7 @@ export async function fetchMonthData(
       closedLostCount: 0, closedLostARR: 0,
       optOutARR: 0, optOutCount: 0,
     };
+    closedWonDealsByAE[ae.id] = [];
   }
 
   // Count ALL Closed Won deals in month as gross ARR (no deal-level churn exclusion)
@@ -476,8 +488,11 @@ export async function fetchMonthData(
     const aeId = OWNER_MAP[ownerUUID];
     if (!aeId || !agg[aeId]) continue;
     const value = getVal(deal, "value") || 0;
+    const closeDate = getDealDate(deal) || "";
+    const dealName = getVal(deal, "name") || "Unnamed Deal";
     agg[aeId].grossARR += value;
     agg[aeId].dealCount += 1;
+    closedWonDealsByAE[aeId].push({ name: String(dealName), value, closeDate });
   }
 
   // Apply user-centric churn data
@@ -539,6 +554,7 @@ export async function fetchMonthData(
     );
     const dc = demoCounts[ae.id] || { total: 0, won: 0 };
     const cwRate = dc.total > 0 ? dc.won / dc.total : null;
+    const optOutData = optOutAgg.perAE[ae.id];
     return {
       id: ae.id, name: ae.name, role: ae.role,
       initials: ae.initials, color: ae.color,
@@ -551,6 +567,8 @@ export async function fetchMonthData(
       cwRate,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
+      closedWonDeals: closedWonDealsByAE[ae.id] || [],
+      optOutDeals: optOutData?.deals || [],
     };
   });
 
