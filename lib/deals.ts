@@ -561,12 +561,16 @@ export async function fetchMonthData(
     if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
   }
 
-  const { commission: bdrCommission, attainment: bdrAttainment } = calcBDRCommission(maxMeetings);
+  const {
+    commission: bdrCommission,
+    attainment: bdrAttainment,
+    monthlyQuota: bdrMonthlyQuota,
+  } = calcBDRCommission(maxMeetings, selectedMonthStr);
   const bdrResult = {
     id: "max", name: BDR_DATA.name, role: BDR_DATA.role,
     initials: BDR_DATA.initials, color: BDR_DATA.color,
     type: "bdr" as const,
-    monthlyQuota: BDR_DATA.monthlyQuota,
+    monthlyQuota: bdrMonthlyQuota,
     totalMeetings: maxMeetings, netMeetings: maxMeetings,
     attainment: bdrAttainment, commission: bdrCommission,
   };

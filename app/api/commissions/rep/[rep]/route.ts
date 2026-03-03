@@ -113,10 +113,10 @@ export async function GET(
       for (const deal of introInMonth) {
         if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) introCallCount += 1;
       }
-      const { commission, attainment } = calcBDRCommission(meetings);
+      const { commission, attainment, monthlyQuota } = calcBDRCommission(meetings, selectedMonth);
       return NextResponse.json({
         rep: { id: "max", name: BDR_DATA.name, role: BDR_DATA.role, initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr" },
-        metrics: { netMeetings: meetings, monthlyTarget: BDR_DATA.monthlyQuota, attainment, commission, introCallsScheduled: introCallCount },
+        metrics: { netMeetings: meetings, monthlyTarget: monthlyQuota, attainment, commission, introCallsScheduled: introCallCount },
         meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
         availableMonths: getAvailableMonths(),
       });
