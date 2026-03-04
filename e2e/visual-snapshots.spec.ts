@@ -127,7 +127,7 @@ test.describe("Visual Snapshots — All User Views", () => {
     await page.waitForTimeout(1000);
 
     // Click CONNECT to trigger the live data fetch
-    const connectBtn = page.getByText("CONNECT");
+    const connectBtn = page.getByRole("button", { name: "CONNECT" });
     await connectBtn.click();
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(SETTLE_MS);
