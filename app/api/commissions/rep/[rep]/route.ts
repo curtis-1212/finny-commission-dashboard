@@ -92,9 +92,14 @@ export async function GET(
     const churnWindowStart = priorStart.toISOString().split("T")[0];
     const churnWindowEnd = priorEnd.toISOString().split("T")[0];
 
+    const closedWonInPriorMonth = closedWonAll.filter((deal: any) => {
+      const d = getDealDate(deal);
+      if (!d) return false;
+      return d >= churnWindowStart && d <= churnWindowEnd;
+    });
     const optOutAgg = buildOptOutAggregation(
       churnedUsers, churnWindowStart, churnWindowEnd,
-      closedWonAll, OWNER_MAP, activeAEIds,
+      closedWonInPriorMonth, OWNER_MAP, activeAEIds,
     );
 
     if (repId === "max") {
