@@ -459,9 +459,14 @@ export async function fetchMonthData(
   const churnWindowStart = priorStart.toISOString().split("T")[0];
   const churnWindowEnd = priorEnd.toISOString().split("T")[0];
 
+  const closedWonInPriorMonth = closedWonDeals.filter((deal: any) => {
+    const d = getDealDate(deal);
+    if (!d) return false;
+    return d >= churnWindowStart && d <= churnWindowEnd;
+  });
   const optOutAgg = buildOptOutAggregation(
     churnedUsers, churnWindowStart, churnWindowEnd,
-    closedWonDeals, OWNER_MAP, activeAEIds,
+    closedWonInPriorMonth, OWNER_MAP, activeAEIds,
   );
 
   const closedLostDeals = await fetchAllDeals({ stage: "Closed Lost" });
