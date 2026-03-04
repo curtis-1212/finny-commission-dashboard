@@ -142,7 +142,7 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {d.recordId ? (
-                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                        <a href={`https://app.attio.com/finnyai-com/objects/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           style={{ color: B.text, textDecoration: "none", borderBottom: `1px dotted ${B.faint}` }}
                           onMouseEnter={(e) => (e.currentTarget.style.color = B.primary)}
@@ -175,7 +175,7 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {d.recordId ? (
-                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                        <a href={`https://app.attio.com/finnyai-com/objects/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           style={{ color: B.text, textDecoration: "none", borderBottom: `1px dotted ${B.faint}` }}
                           onMouseEnter={(e) => (e.currentTarget.style.color = B.primary)}
