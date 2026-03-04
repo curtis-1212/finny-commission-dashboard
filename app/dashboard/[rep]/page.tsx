@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
 interface StageCount { count: number; arr: number }
-interface DealDetail { name: string; value: number; closeDate: string }
+interface DealDetail { name: string; value: number; closeDate: string; recordId?: string }
 interface AEMetrics {
   grossARR: number; churnARR: number; netARR: number;
   monthlyQuota: number; attainment: number; commission: number;
@@ -140,7 +140,16 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
               closedWonDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < closedWonDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                      {d.recordId ? (
+                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: B.text, textDecoration: "none", borderBottom: `1px dotted ${B.faint}` }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = B.primary)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = B.text)}
+                        >{d.name}</a>
+                      ) : d.name}
+                    </div>
                     <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: B.primary, fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>{fmtD(d.value)}</div>
@@ -164,7 +173,16 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
               optOutDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < optOutDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                      {d.recordId ? (
+                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: B.text, textDecoration: "none", borderBottom: `1px dotted ${B.faint}` }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = B.primary)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = B.text)}
+                        >{d.name}</a>
+                      ) : d.name}
+                    </div>
                     <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#EF4444", fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>-{fmtD(d.value)}</div>

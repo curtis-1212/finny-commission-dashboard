@@ -56,6 +56,7 @@ export interface DealDetail {
   name: string;
   value: number;
   closeDate: string;
+  recordId?: string;  // Attio record ID for deep-linking
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -327,7 +328,7 @@ export function buildOptOutAggregation(
     if (!perAE[aeId]) perAE[aeId] = { optOutCount: 0, optOutARR: 0, deals: [] };
     perAE[aeId].optOutCount += 1;
     perAE[aeId].optOutARR += value;
-    perAE[aeId].deals.push({ name: String(dealName), value, closeDate });
+    perAE[aeId].deals.push({ name: String(dealName), value, closeDate, recordId: deal?.id?.record_id || undefined });
   }
 
   const totalOptOuts = Object.values(perAE).reduce((sum, v) => sum + v.optOutCount, 0);
@@ -492,7 +493,7 @@ export async function fetchMonthData(
     const dealName = getVal(deal, "name") || "Unnamed Deal";
     agg[aeId].grossARR += value;
     agg[aeId].dealCount += 1;
-    closedWonDealsByAE[aeId].push({ name: String(dealName), value, closeDate });
+    closedWonDealsByAE[aeId].push({ name: String(dealName), value, closeDate, recordId: deal?.id?.record_id || undefined });
   }
 
   // Apply user-centric churn data

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-interface DealDetail { name: string; value: number; closeDate: string }
+interface DealDetail { name: string; value: number; closeDate: string; recordId?: string }
 interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
@@ -70,17 +70,43 @@ function getCurrentMonthValue() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-// ─── Attainment color logic ─────────────────────────────────────────────────
-function attColor(att: number): string {
-  if (att >= 1.0) return C.accent;
-  if (att >= 0.8) return C.text;
-  if (att >= 0.6) return C.warn;
+/**
+ * Calculate expected pace through the month for color thresholds.
+ * Returns null for past/future months (use absolute thresholds).
+ * For the current month, returns a value between 0–1 with cubic convergence
+ * toward 1.0 at month end so colors approach absolute thresholds naturally.
+ */
+function getExpectedPace(selectedMonth: string): number | null {
+  const currentMonthValue = getCurrentMonthValue();
+  if (selectedMonth !== currentMonthValue) return null;
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const dayOfMonth = now.getUTCDate();
+  const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+  const rawPace = dayOfMonth / totalDays;
+  // Cubic convergence: gentle early in month, steep near end
+  const convergence = Math.pow(rawPace, 3);
+  return rawPace + (1.0 - rawPace) * convergence;
+}
+
+// ─── Attainment color logic (pace-relative) ─────────────────────────────────
+// When pace is null (past month), uses absolute thresholds (100%/80%/60%).
+// When pace is provided (current month), compares attainment to expected pace.
+function attColor(att: number, pace?: number | null): string {
+  const threshold = pace ?? 1.0;
+  if (att >= threshold)           return C.accent;
+  if (att >= threshold * 0.8)     return C.text;
+  if (att >= threshold * 0.6)     return C.warn;
   return C.danger;
 }
-function attBg(att: number): string {
-  if (att >= 1.0) return `${C.accent}18`;
-  if (att >= 0.8) return "transparent";
-  if (att >= 0.6) return `${C.warn}12`;
+function attBg(att: number, pace?: number | null): string {
+  const threshold = pace ?? 1.0;
+  if (att >= threshold)           return `${C.accent}18`;
+  if (att >= threshold * 0.8)     return "transparent";
+  if (att >= threshold * 0.6)     return `${C.warn}12`;
   return `${C.danger}12`;
 }
 
@@ -121,19 +147,21 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount, onClick }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
   demoCount?: number; cwRate?: number | null; cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
+  pace?: number | null;
   onClick?: () => void;
 }) {
   const pct = Math.min(att, 1.5);
-  const barColor = att >= 1.0
+  const threshold = pace ?? 1.0;
+  const barColor = att >= threshold
     ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
-    : att >= 0.8
+    : att >= threshold * 0.8
       ? `linear-gradient(90deg, ${C.primary}, ${C.primaryLight})`
-      : att >= 0.6
+      : att >= threshold * 0.6
         ? `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})`
         : `linear-gradient(90deg, ${C.danger}, ${C.dangerMuted})`;
 
@@ -181,7 +209,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Attain.</div>
             <div style={{
               fontSize: 15, fontWeight: 700, fontFamily: F.m,
-              color: attColor(att), letterSpacing: "-0.02em",
+              color: attColor(att, pace), letterSpacing: "-0.02em",
             }}>
               {fmtPct0(att)}
             </div>
@@ -334,7 +362,16 @@ function ExecDealListModal({ repName, closedWonDeals, optOutDeals, onClose }: {
               closedWonDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0", borderBottom: i < closedWonDeals.length - 1 ? `1px solid ${C.border}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                      {d.recordId ? (
+                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: C.text, textDecoration: "none", borderBottom: `1px dotted ${C.textGhost}` }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = C.primary)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = C.text)}
+                        >{d.name}</a>
+                      ) : d.name}
+                    </div>
                     <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, fontFamily: F.m, marginLeft: 8, flexShrink: 0 }}>{fmtK(d.value)}</div>
@@ -360,7 +397,16 @@ function ExecDealListModal({ repName, closedWonDeals, optOutDeals, onClose }: {
               optOutDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0", borderBottom: i < optOutDeals.length - 1 ? `1px solid ${C.border}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                      {d.recordId ? (
+                        <a href={`https://app.attio.com/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: C.text, textDecoration: "none", borderBottom: `1px dotted ${C.textGhost}` }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = C.primary)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = C.text)}
+                        >{d.name}</a>
+                      ) : d.name}
+                    </div>
                     <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.danger, fontFamily: F.m, marginLeft: 8, flexShrink: 0 }}>-{fmtK(d.value)}</div>
@@ -427,6 +473,7 @@ export default function ExecDashboard() {
   const commAsPercent = totalNetARR > 0 ? totalComm / totalNetARR : 0;
 
   const sortedAEs = [...aeResults].sort((a, b) => (b.netARR || 0) - (a.netARR || 0));
+  const pace = getExpectedPace(selectedMonth);
 
   const cwRateLabel = (() => {
     if (!monthLabel) return "CW RATE";
@@ -629,6 +676,25 @@ export default function ExecDashboard() {
               </div>
             </div>
 
+            {/* ── AEs Subheader ── */}
+            <div style={{
+              display: "flex", alignItems: "center",
+              padding: "10px 20px",
+              background: "rgba(0,0,0,0.02)",
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 600, color: C.textDim,
+                fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+              }}>
+                Account Executives
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+                {sortedAEs.length} rep{sortedAEs.length !== 1 ? "s" : ""}
+              </div>
+            </div>
+
             {/* AE rows */}
             {sortedAEs.map((ae) => (
               <PlanBar
@@ -647,22 +713,41 @@ export default function ExecDashboard() {
                 optOutARR={ae.optOutARR}
                 optOutCount={ae.optOutCount}
                 type="ae"
+                pace={pace}
                 onClick={() => setDealModalAE(ae)}
               />
             ))}
 
-            {/* BDR row */}
+            {/* ── BDRs Subheader + Row ── */}
             {bdrResult && (
-              <PlanBar
-                name={bdrResult.name}
-                initials={bdrResult.initials}
-                actual={bdrResult.netMeetings || 0}
-                quota={bdrResult.monthlyQuota}
-                att={bdrResult.attainment || 0}
-                commission={bdrResult.commission || 0}
-                deals={0}
-                type="bdr"
-              />
+              <>
+                <div style={{
+                  display: "flex", alignItems: "center",
+                  padding: "10px 20px",
+                  background: "rgba(0,0,0,0.02)",
+                  borderBottom: `1px solid ${C.border}`,
+                  borderTop: `1px solid ${C.borderMed}`,
+                }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 600, color: C.textDim,
+                    fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+                  }}>
+                    Business Development
+                  </div>
+                </div>
+
+                <PlanBar
+                  name={bdrResult.name}
+                  initials={bdrResult.initials}
+                  actual={bdrResult.netMeetings || 0}
+                  quota={bdrResult.monthlyQuota}
+                  att={bdrResult.attainment || 0}
+                  commission={bdrResult.commission || 0}
+                  deals={0}
+                  type="bdr"
+                  pace={pace}
+                />
+              </>
             )}
 
             {/* Team total row */}
@@ -688,7 +773,7 @@ export default function ExecDashboard() {
                 </div>
                 <div style={{ textAlign: "right" as const }}>
                   <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>% to Plan</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: attColor(teamAttainment) }}>{fmtPct0(teamAttainment)}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: attColor(teamAttainment, pace) }}>{fmtPct0(teamAttainment)}</div>
                 </div>
                 <div style={{ textAlign: "right" as const }}>
                   <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Commission</div>
