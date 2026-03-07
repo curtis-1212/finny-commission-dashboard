@@ -205,6 +205,16 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             </div>
           </div>
 
+          {/* Gross ARR */}
+          {!isBDR && (
+            <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Gross ARR</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec, letterSpacing: "-0.02em" }}>
+                {fmtK(grossARR ?? 0)}
+              </div>
+            </div>
+          )}
+
           {/* Attainment */}
           <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Attain.</div>
@@ -486,12 +496,7 @@ export default function ExecDashboard() {
   const sortedAEs = [...aeResults].sort((a, b) => (b.netARR || 0) - (a.netARR || 0));
   const pace = getExpectedPace(selectedMonth);
 
-  const cwRateLabel = (() => {
-    if (!monthLabel) return "CW RATE";
-    const parts = monthLabel.split(" ");
-    if (parts.length < 2) return "CW RATE";
-    return `CW RATE (${parts[0].slice(0, 3)} '${parts[1].slice(-2)})`;
-  })();
+  const cwRateLabel = "CW RATE";
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: F.b }}>

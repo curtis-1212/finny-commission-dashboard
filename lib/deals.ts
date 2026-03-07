@@ -530,18 +530,19 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
-  // CW Rate: based on deals with demo_held_date in this month (any stage)
+  // Close rates: based on deals with demo_held_date in trailing 90-day window
   const allDeals = await fetchAllDeals({});
-  const demoInMonth = allDeals.filter((deal: any) => {
+  const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const demosInWindow = allDeals.filter((deal: any) => {
     const d = getDemoHeldDate(deal);
     if (!d) return false;
-    return d >= startISO && d <= endISO;
+    return d >= trailingStart && d <= endISO;
   });
   const demoCounts: Record<string, { total: number; won: number; tbo: number }> = {};
   for (const ae of activeAEs) {
     demoCounts[ae.id] = { total: 0, won: 0, tbo: 0 };
   }
-  for (const deal of demoInMonth) {
+  for (const deal of demosInWindow) {
     const ownerUUID = getVal(deal, "owner");
     const aeId = OWNER_MAP[ownerUUID];
     if (!aeId || !demoCounts[aeId]) continue;
@@ -585,6 +586,11 @@ export async function fetchMonthData(
   });
 
   // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
+  const demoInMonth = allDeals.filter((deal: any) => {
+    const d = getDemoHeldDate(deal);
+    if (!d) return false;
+    return d >= startISO && d <= endISO;
+  });
   let maxMeetings = 0;
   for (const deal of demoInMonth) {
     const leadOwner = getVal(deal, "lead_owner");

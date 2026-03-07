@@ -175,15 +175,16 @@ export async function GET(
     const optOutARR = repOptOut.optOutARR;
     const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
-    // Close rate: Demo Held → TBO and Demo Held → CW
+    // Close rate: Demo Held → TBO and Demo Held → CW (trailing 90-day window)
     const allDeals = await fetchAllDeals({});
-    const demoInMonth = allDeals.filter((deal: any) => {
+    const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const demosInWindow = allDeals.filter((deal: any) => {
       const d = getDemoHeldDate(deal);
       if (!d) return false;
-      return d >= startISO && d <= endISO;
+      return d >= trailingStart && d <= endISO;
     });
     let demoCount = 0, demoWon = 0, demoTBO = 0;
-    for (const deal of demoInMonth) {
+    for (const deal of demosInWindow) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       demoCount += 1;
       const stage = getVal(deal, "stage");
