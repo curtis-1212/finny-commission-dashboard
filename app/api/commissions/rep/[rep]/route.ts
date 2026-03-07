@@ -175,6 +175,25 @@ export async function GET(
     const optOutARR = repOptOut.optOutARR;
     const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
+    // Close rate: Demo Held → TBO and Demo Held → CW
+    const allDeals = await fetchAllDeals({});
+    const demoInMonth = allDeals.filter((deal: any) => {
+      const d = getDemoHeldDate(deal);
+      if (!d) return false;
+      return d >= startISO && d <= endISO;
+    });
+    let demoCount = 0, demoWon = 0, demoTBO = 0;
+    for (const deal of demoInMonth) {
+      if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
+      demoCount += 1;
+      const stage = getVal(deal, "stage");
+      const stageName = typeof stage === "object" && stage?.title ? stage.title : String(stage || "");
+      if (stageName === "Closed Won") { demoWon += 1; demoTBO += 1; }
+      else if (stageName === "To Be Onboarded") { demoTBO += 1; }
+    }
+    const cwRate = demoCount > 0 ? demoWon / demoCount : null;
+    const tboRate = demoCount > 0 ? demoTBO / demoCount : null;
+
     const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
 
@@ -200,6 +219,9 @@ export async function GET(
         closedLost: { count: closedLostCount, arr: closedLostARR },
         churned: { count: churnedCount, arr: churnARR },
         optOut: { count: optOutCount, arr: optOutARR },
+        demoCount,
+        cwRate,
+        tboRate,
         dealCount: closedWonCount, excludedCount: churnedCount,
         closedWonDeals: closedWonDealDetails,
         optOutDeals: optOutDealDetails,

@@ -11,6 +11,7 @@ interface AEResult {
   demoCount?: number;
   optOutARR?: number; optOutCount?: number;
   cwRate?: number | null;
+  tboRate?: number | null;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
   closedWonDeals?: DealDetail[];
@@ -147,10 +148,10 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
-  demoCount?: number; cwRate?: number | null; cwRateLabel?: string;
+  demoCount?: number; cwRate?: number | null; tboRate?: number | null; cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
   pace?: number | null;
   onClick?: () => void;
@@ -221,6 +222,16 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
           </div>
 
+
+          {/* TBO Rate */}
+          {!isBDR && (
+            <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>TBO RATE</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
+                {tboRate != null ? fmtPct0(tboRate) : "—"}
+              </div>
+            </div>
+          )}
 
           {/* CW Rate */}
           {!isBDR && (
@@ -709,6 +720,7 @@ export default function ExecDashboard() {
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
                 cwRate={ae.cwRate}
+                tboRate={ae.tboRate}
                 cwRateLabel={cwRateLabel}
                 optOutARR={ae.optOutARR}
                 optOutCount={ae.optOutCount}

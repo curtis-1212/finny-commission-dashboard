@@ -14,6 +14,9 @@ interface AEMetrics {
   toBeOnboarded: StageCount; closedWon: StageCount;
   closedLost: StageCount; churned: StageCount;
   optOut?: StageCount;
+  demoCount?: number;
+  cwRate?: number | null;
+  tboRate?: number | null;
   closedWonDeals?: DealDetail[];
   optOutDeals?: DealDetail[];
 }
@@ -443,6 +446,32 @@ export default function RepDashboard() {
             </>
           )}
         </div>
+
+        {/* ─── Close Rates ───────────────────────────────────────── */}
+        {isAE && aeM.demoCount != null && aeM.demoCount > 0 && (
+          <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "20px 22px", marginTop: 12, ...an("0.34s") }}>
+            <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, marginBottom: 16 }}>
+              Close Rates
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              {/* Demos Held */}
+              <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: "#F8FAFC", border: `1px solid ${B.borderLight}`, textAlign: "center" as const }}>
+                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demos Held</div>
+                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.text, letterSpacing: "-0.02em" }}>{aeM.demoCount}</div>
+              </div>
+              {/* Demo → TBO */}
+              <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: B.primaryFaint, border: `1px solid ${B.primary}20`, textAlign: "center" as const }}>
+                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → TBO</div>
+                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.primary, letterSpacing: "-0.02em" }}>{aeM.tboRate != null ? fmtPct(aeM.tboRate) : "—"}</div>
+              </div>
+              {/* Demo → CW */}
+              <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: `${B.accent}08`, border: `1px solid ${B.accent}20`, textAlign: "center" as const }}>
+                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → CW</div>
+                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.accentDark, letterSpacing: "-0.02em" }}>{aeM.cwRate != null ? fmtPct(aeM.cwRate) : "—"}</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ─── Deal list modal ───────────────────────────────────── */}
         {showDeals && isAE && (

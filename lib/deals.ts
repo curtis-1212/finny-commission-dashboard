@@ -397,6 +397,8 @@ export interface MonthData {
     dealCount: number; churnCount: number; closedLostCount: number; closedLostARR: number;
     optOutARR: number; optOutCount: number;
     cwRate: number | null;
+    tboRate: number | null;
+    demoCount: number;
     attainment: number; commission: number;
     tierBreakdown: { label?: string; amount: number }[];
     closedWonDeals: DealDetail[];
@@ -535,9 +537,9 @@ export async function fetchMonthData(
     if (!d) return false;
     return d >= startISO && d <= endISO;
   });
-  const demoCounts: Record<string, { total: number; won: number }> = {};
+  const demoCounts: Record<string, { total: number; won: number; tbo: number }> = {};
   for (const ae of activeAEs) {
-    demoCounts[ae.id] = { total: 0, won: 0 };
+    demoCounts[ae.id] = { total: 0, won: 0, tbo: 0 };
   }
   for (const deal of demoInMonth) {
     const ownerUUID = getVal(deal, "owner");
@@ -545,7 +547,8 @@ export async function fetchMonthData(
     if (!aeId || !demoCounts[aeId]) continue;
     demoCounts[aeId].total += 1;
     const stage = getDealStage(deal);
-    if (stage === "Closed Won") demoCounts[aeId].won += 1;
+    if (stage === "Closed Won") { demoCounts[aeId].won += 1; demoCounts[aeId].tbo += 1; }
+    else if (stage === "To Be Onboarded") { demoCounts[aeId].tbo += 1; }
   }
 
   const aeResults = activeAEs.map((ae) => {
@@ -558,8 +561,9 @@ export async function fetchMonthData(
     const { commission, attainment, tierBreakdown } = calcAECommission(
       ae.monthlyQuota, ae.tiers, a.netARR,
     );
-    const dc = demoCounts[ae.id] || { total: 0, won: 0 };
+    const dc = demoCounts[ae.id] || { total: 0, won: 0, tbo: 0 };
     const cwRate = dc.total > 0 ? dc.won / dc.total : null;
+    const tboRate = dc.total > 0 ? dc.tbo / dc.total : null;
     const optOutData = optOutAgg.perAE[ae.id];
     return {
       id: ae.id, name: ae.name, role: ae.role,
@@ -571,6 +575,8 @@ export async function fetchMonthData(
       closedLostCount: a.closedLostCount, closedLostARR: a.closedLostARR,
       optOutARR: a.optOutARR, optOutCount: a.optOutCount,
       cwRate,
+      tboRate,
+      demoCount: dc.total,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
