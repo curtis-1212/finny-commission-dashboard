@@ -34,3 +34,8 @@ yarn-error.log*
 Thumbs.db
 .vercel
 .env*.local
+
+# Playwright
+screenshots/
+test-results/
+playwright-report/
