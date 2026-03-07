@@ -77,7 +77,10 @@ export function getDemoHeldDate(deal: any): string | null {
 function getDealStage(deal: any): string | null {
   const s = getVal(deal, "stage");
   if (!s) return null;
-  if (typeof s === "object" && s?.title) return s.title;
+  if (typeof s === "object") {
+    if (s?.title) return s.title;
+    if (s?.status?.title) return s.status.title;
+  }
   return String(s);
 }
 

@@ -188,7 +188,9 @@ export async function GET(
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       demoCount += 1;
       const stage = getVal(deal, "stage");
-      const stageName = typeof stage === "object" && stage?.title ? stage.title : String(stage || "");
+      const stageName = typeof stage === "object"
+        ? (stage?.title || stage?.status?.title || "")
+        : String(stage || "");
       if (stageName === "Closed Won") { demoWon += 1; demoTBO += 1; }
       else if (stageName === "To Be Onboarded") { demoTBO += 1; }
     }
