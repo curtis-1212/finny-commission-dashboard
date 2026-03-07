@@ -176,6 +176,10 @@ export async function GET(
     const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
     // Close rate: Demo Held → TBO and Demo Held → CW (trailing 90-day window)
+    // Use record ID sets from stage-filtered fetches (avoids parsing stage field format)
+    const closedWonIds = new Set(closedWonAll.map((d: any) => d?.id?.record_id).filter(Boolean));
+    const tboIds = new Set(toBeOnboardedAll.map((d: any) => d?.id?.record_id).filter(Boolean));
+
     const allDeals = await fetchAllDeals({});
     const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const demosInWindow = allDeals.filter((deal: any) => {
@@ -187,12 +191,9 @@ export async function GET(
     for (const deal of demosInWindow) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       demoCount += 1;
-      const stage = getVal(deal, "stage");
-      const stageName = typeof stage === "object"
-        ? (stage?.title || stage?.status?.title || "")
-        : String(stage || "");
-      if (stageName === "Closed Won") { demoWon += 1; demoTBO += 1; }
-      else if (stageName === "To Be Onboarded") { demoTBO += 1; }
+      const rid = deal?.id?.record_id;
+      if (rid && closedWonIds.has(rid)) { demoWon += 1; demoTBO += 1; }
+      else if (rid && tboIds.has(rid)) { demoTBO += 1; }
     }
     const cwRate = demoCount > 0 ? demoWon / demoCount : null;
     const tboRate = demoCount > 0 ? demoTBO / demoCount : null;

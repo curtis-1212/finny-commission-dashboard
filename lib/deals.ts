@@ -534,6 +534,11 @@ export async function fetchMonthData(
   }
 
   // Close rates: based on deals with demo_held_date in trailing 90-day window
+  // Use record ID sets from stage-filtered fetches (avoids parsing stage field format)
+  const closedWonIds = new Set(closedWonDeals.map((d: any) => d?.id?.record_id).filter(Boolean));
+  const tboDeals = await fetchAllDeals({ stage: "To Be Onboarded" });
+  const tboIds = new Set(tboDeals.map((d: any) => d?.id?.record_id).filter(Boolean));
+
   const allDeals = await fetchAllDeals({});
   const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
   const demosInWindow = allDeals.filter((deal: any) => {
@@ -550,9 +555,9 @@ export async function fetchMonthData(
     const aeId = OWNER_MAP[ownerUUID];
     if (!aeId || !demoCounts[aeId]) continue;
     demoCounts[aeId].total += 1;
-    const stage = getDealStage(deal);
-    if (stage === "Closed Won") { demoCounts[aeId].won += 1; demoCounts[aeId].tbo += 1; }
-    else if (stage === "To Be Onboarded") { demoCounts[aeId].tbo += 1; }
+    const rid = deal?.id?.record_id;
+    if (rid && closedWonIds.has(rid)) { demoCounts[aeId].won += 1; demoCounts[aeId].tbo += 1; }
+    else if (rid && tboIds.has(rid)) { demoCounts[aeId].tbo += 1; }
   }
 
   const aeResults = activeAEs.map((ae) => {
