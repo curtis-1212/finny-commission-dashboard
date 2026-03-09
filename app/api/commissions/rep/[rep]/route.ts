@@ -175,28 +175,23 @@ export async function GET(
     const optOutARR = repOptOut.optOutARR;
     const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
-    // Close rate: Demo Held → TBO and Demo Held → CW (trailing 90-day window)
-    // Use record ID sets from stage-filtered fetches (avoids parsing stage field format)
-    const closedWonIds = new Set(closedWonAll.map((d: any) => d?.id?.record_id).filter(Boolean));
-    const tboIds = new Set(toBeOnboardedAll.map((d: any) => d?.id?.record_id).filter(Boolean));
-
+    // Close rate: throughput ratio — CW deals / demos held in the same month.
+    // demo_held_date is not populated on closed deals, so we compare independent counts.
     const allDeals = await fetchAllDeals({});
-    const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const demosInWindow = allDeals.filter((deal: any) => {
+    const demosInMonth = allDeals.filter((deal: any) => {
       const d = getDemoHeldDate(deal);
       if (!d) return false;
-      return d >= trailingStart && d <= endISO;
+      return d >= startISO && d <= endISO;
     });
-    let demoCount = 0, demoWon = 0, demoTBO = 0;
-    for (const deal of demosInWindow) {
+    let demoCount = 0;
+    for (const deal of demosInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
       demoCount += 1;
-      const rid = deal?.id?.record_id;
-      if (rid && closedWonIds.has(rid)) { demoWon += 1; demoTBO += 1; }
-      else if (rid && tboIds.has(rid)) { demoTBO += 1; }
     }
-    const cwRate = demoCount > 0 ? demoWon / demoCount : null;
-    const tboRate = demoCount > 0 ? demoTBO / demoCount : null;
+    // Demo → CW: closed won this month / demos held this month
+    const cwRate = demoCount > 0 ? closedWonCount / demoCount : null;
+    // Demo → TBO: (TBO pipeline + closed won) / demos held this month
+    const tboRate = demoCount > 0 ? (toBeOnboardedCount + closedWonCount) / demoCount : null;
 
     const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);

@@ -533,63 +533,34 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
-  // Close rates: based on deals with demo_held_date in trailing 90-day window
-  // Use record ID sets from stage-filtered fetches (avoids parsing stage field format)
-  const closedWonIds = new Set(closedWonDeals.map((d: any) => d?.id?.record_id).filter(Boolean));
-  const tboDeals = await fetchAllDeals({ stage: "To Be Onboarded" });
-  const tboIds = new Set(tboDeals.map((d: any) => d?.id?.record_id).filter(Boolean));
-
+  // Close rates: throughput ratio — CW deals / demos held in the same period.
+  // demo_held_date is not populated on closed deals, so we can't do cohort tracking.
+  // Instead, compare demos held this month vs deals closed this month as a ratio.
   const allDeals = await fetchAllDeals({});
-  const trailingStart = new Date(new Date(endISO).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const demosInWindow = allDeals.filter((deal: any) => {
+  const demosInMonth = allDeals.filter((deal: any) => {
     const d = getDemoHeldDate(deal);
     if (!d) return false;
-    return d >= trailingStart && d <= endISO;
+    return d >= startISO && d <= endISO;
   });
-
-  // Debug logging for close rate investigation (console.error for Vercel visibility)
-  console.error("[CLOSE_RATE_DEBUG] trailingStart:", trailingStart, "endISO:", endISO);
-  console.error("[CLOSE_RATE_DEBUG] allDeals count:", allDeals.length);
-  console.error("[CLOSE_RATE_DEBUG] closedWonIds size:", closedWonIds.size, "tboIds size:", tboIds.size);
-  console.error("[CLOSE_RATE_DEBUG] demosInWindow count:", demosInWindow.length);
-  if (allDeals.length > 0) {
-    const sample = allDeals[0];
-    console.error("[CLOSE_RATE_DEBUG] sample deal id:", JSON.stringify(sample?.id));
-    console.error("[CLOSE_RATE_DEBUG] sample deal demo_held_date raw:", JSON.stringify(sample?.values?.[DEMO_HELD_DATE_ATTR]));
-    console.error("[CLOSE_RATE_DEBUG] sample deal stage raw:", JSON.stringify(sample?.values?.stage));
-    console.error("[CLOSE_RATE_DEBUG] sample deal keys:", Object.keys(sample?.values || {}).join(", "));
-  }
-  if (closedWonDeals.length > 0) {
-    const cwSample = closedWonDeals[0];
-    console.error("[CLOSE_RATE_DEBUG] CW sample id:", JSON.stringify(cwSample?.id));
-    console.error("[CLOSE_RATE_DEBUG] CW sample stage raw:", JSON.stringify(cwSample?.values?.stage));
-  }
-  if (demosInWindow.length > 0) {
-    const demoSample = demosInWindow[0];
-    console.error("[CLOSE_RATE_DEBUG] demo sample id:", JSON.stringify(demoSample?.id));
-    console.error("[CLOSE_RATE_DEBUG] demo sample demo_held_date:", getDemoHeldDate(demoSample));
-    console.error("[CLOSE_RATE_DEBUG] demo sample in CW set:", closedWonIds.has(demoSample?.id?.record_id));
-    console.error("[CLOSE_RATE_DEBUG] demo sample in TBO set:", tboIds.has(demoSample?.id?.record_id));
-  }
-
-  const demoCounts: Record<string, { total: number; won: number; tbo: number }> = {};
+  const demoCounts: Record<string, number> = {};
   for (const ae of activeAEs) {
-    demoCounts[ae.id] = { total: 0, won: 0, tbo: 0 };
+    demoCounts[ae.id] = 0;
   }
-  for (const deal of demosInWindow) {
+  for (const deal of demosInMonth) {
     const ownerUUID = getVal(deal, "owner");
     const aeId = OWNER_MAP[ownerUUID];
-    if (!aeId || !demoCounts[aeId]) continue;
-    demoCounts[aeId].total += 1;
-    const rid = deal?.id?.record_id;
-    if (rid && closedWonIds.has(rid)) { demoCounts[aeId].won += 1; demoCounts[aeId].tbo += 1; }
-    else if (rid && tboIds.has(rid)) { demoCounts[aeId].tbo += 1; }
+    if (!aeId || demoCounts[aeId] === undefined) continue;
+    demoCounts[aeId] += 1;
   }
 
-  // Debug: log per-AE close rate results
-  for (const ae of activeAEs) {
-    const dc = demoCounts[ae.id];
-    console.error(`[CLOSE_RATE_DEBUG] ${ae.name}: total=${dc.total} won=${dc.won} tbo=${dc.tbo}`);
+  // Count TBO deals per AE (current pipeline, not month-filtered)
+  let tboDeals: any[] = [];
+  try { tboDeals = await fetchAllDeals({ stage: "To Be Onboarded" }); } catch {}
+  const tboCounts: Record<string, number> = {};
+  for (const ae of activeAEs) tboCounts[ae.id] = 0;
+  for (const deal of tboDeals) {
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (aeId && tboCounts[aeId] !== undefined) tboCounts[aeId] += 1;
   }
 
   const aeResults = activeAEs.map((ae) => {
@@ -602,9 +573,11 @@ export async function fetchMonthData(
     const { commission, attainment, tierBreakdown } = calcAECommission(
       ae.monthlyQuota, ae.tiers, a.netARR,
     );
-    const dc = demoCounts[ae.id] || { total: 0, won: 0, tbo: 0 };
-    const cwRate = dc.total > 0 ? dc.won / dc.total : null;
-    const tboRate = dc.total > 0 ? dc.tbo / dc.total : null;
+    const demoCount = demoCounts[ae.id] || 0;
+    // Demo → CW: closed won deals this month / demos held this month
+    const cwRate = demoCount > 0 ? a.dealCount / demoCount : null;
+    // Demo → TBO: (TBO pipeline + closed won) / demos held this month
+    const tboRate = demoCount > 0 ? (tboCounts[ae.id] + a.dealCount) / demoCount : null;
     const optOutData = optOutAgg.perAE[ae.id];
     return {
       id: ae.id, name: ae.name, role: ae.role,
@@ -617,7 +590,7 @@ export async function fetchMonthData(
       optOutARR: a.optOutARR, optOutCount: a.optOutCount,
       cwRate,
       tboRate,
-      demoCount: dc.total,
+      demoCount,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
@@ -626,13 +599,8 @@ export async function fetchMonthData(
   });
 
   // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
-  const demoInMonth = allDeals.filter((deal: any) => {
-    const d = getDemoHeldDate(deal);
-    if (!d) return false;
-    return d >= startISO && d <= endISO;
-  });
   let maxMeetings = 0;
-  for (const deal of demoInMonth) {
+  for (const deal of demosInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
     if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
   }
@@ -657,38 +625,6 @@ export async function fetchMonthData(
     ? "No Closed Won deals found for this month -- check Attio data"
     : undefined;
 
-  // Build debug info for close rate diagnosis (temporary — remove after fix)
-  const _closeRateDebug: any = {
-    trailingStart,
-    endISO,
-    allDealsCount: allDeals.length,
-    closedWonIdsSize: closedWonIds.size,
-    tboIdsSize: tboIds.size,
-    demosInWindowCount: demosInWindow.length,
-    perAE: Object.fromEntries(activeAEs.map(ae => [ae.name, demoCounts[ae.id]])),
-  };
-  if (allDeals.length > 0) {
-    const s = allDeals[0];
-    _closeRateDebug.sampleDeal = {
-      id: s?.id,
-      demoHeldDateRaw: s?.values?.[DEMO_HELD_DATE_ATTR],
-      stageRaw: s?.values?.stage,
-      valueKeys: Object.keys(s?.values || {}),
-    };
-  }
-  if (closedWonDeals.length > 0) {
-    _closeRateDebug.cwSample = { id: closedWonDeals[0]?.id };
-  }
-  if (demosInWindow.length > 0) {
-    const d = demosInWindow[0];
-    _closeRateDebug.demoSample = {
-      id: d?.id,
-      demoHeldDate: getDemoHeldDate(d),
-      inCWSet: closedWonIds.has(d?.id?.record_id),
-      inTBOSet: tboIds.has(d?.id?.record_id),
-    };
-  }
-
   return {
     aeResults,
     bdrResult,
@@ -698,7 +634,6 @@ export async function fetchMonthData(
       monthLabel,
       selectedMonth: selectedMonthStr,
       warning,
-      _closeRateDebug,
     },
   };
 }
