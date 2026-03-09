@@ -657,6 +657,38 @@ export async function fetchMonthData(
     ? "No Closed Won deals found for this month -- check Attio data"
     : undefined;
 
+  // Build debug info for close rate diagnosis (temporary — remove after fix)
+  const _closeRateDebug: any = {
+    trailingStart,
+    endISO,
+    allDealsCount: allDeals.length,
+    closedWonIdsSize: closedWonIds.size,
+    tboIdsSize: tboIds.size,
+    demosInWindowCount: demosInWindow.length,
+    perAE: Object.fromEntries(activeAEs.map(ae => [ae.name, demoCounts[ae.id]])),
+  };
+  if (allDeals.length > 0) {
+    const s = allDeals[0];
+    _closeRateDebug.sampleDeal = {
+      id: s?.id,
+      demoHeldDateRaw: s?.values?.[DEMO_HELD_DATE_ATTR],
+      stageRaw: s?.values?.stage,
+      valueKeys: Object.keys(s?.values || {}),
+    };
+  }
+  if (closedWonDeals.length > 0) {
+    _closeRateDebug.cwSample = { id: closedWonDeals[0]?.id };
+  }
+  if (demosInWindow.length > 0) {
+    const d = demosInWindow[0];
+    _closeRateDebug.demoSample = {
+      id: d?.id,
+      demoHeldDate: getDemoHeldDate(d),
+      inCWSet: closedWonIds.has(d?.id?.record_id),
+      inTBOSet: tboIds.has(d?.id?.record_id),
+    };
+  }
+
   return {
     aeResults,
     bdrResult,
@@ -666,6 +698,7 @@ export async function fetchMonthData(
       monthLabel,
       selectedMonth: selectedMonthStr,
       warning,
+      _closeRateDebug,
     },
   };
 }
