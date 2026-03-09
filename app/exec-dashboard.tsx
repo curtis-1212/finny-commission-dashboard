@@ -12,6 +12,9 @@ interface AEResult {
   optOutARR?: number; optOutCount?: number;
   cwRate?: number | null;
   tboRate?: number | null;
+  priorCwRate?: number | null;
+  priorTboRate?: number | null;
+  priorDemoCount?: number;
   attainment?: number; commission?: number;
   tierBreakdown?: { label: string; amount: number }[];
   closedWonDeals?: DealDetail[];
@@ -148,10 +151,12 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
-  demoCount?: number; cwRate?: number | null; tboRate?: number | null; cwRateLabel?: string;
+  demoCount?: number; cwRate?: number | null; tboRate?: number | null;
+  priorCwRate?: number | null; priorTboRate?: number | null;
+  cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
   pace?: number | null;
   onClick?: () => void;
@@ -235,28 +240,40 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 
           {/* TBO Rate */}
           {!isBDR && (
-            <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
+            <div style={{ flex: "0.8 1 50px", textAlign: "right" as const, minWidth: 45 }}
+              title={priorTboRate != null ? `Prior month: ${fmtPct0(priorTboRate)}` : "No prior month data"}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>TBO RATE</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
                 {tboRate != null ? fmtPct0(tboRate) : "—"}
               </div>
+              {demoCount != null && demoCount > 0 && (
+                <div style={{ fontSize: 9, color: C.textGhost, fontFamily: F.m, marginTop: 1 }}>
+                  {demoCount} demo{demoCount !== 1 ? "s" : ""}
+                </div>
+              )}
             </div>
           )}
 
           {/* CW Rate */}
           {!isBDR && (
-            <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
+            <div style={{ flex: "0.8 1 50px", textAlign: "right" as const, minWidth: 45 }}
+              title={priorCwRate != null ? `Prior month: ${fmtPct0(priorCwRate)}` : "No prior month data"}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", marginBottom: 2 }}>{cwRateLabel || "CW RATE"}</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
                 {cwRate != null ? fmtPct0(cwRate) : "—"}
               </div>
+              {demoCount != null && demoCount > 0 && (
+                <div style={{ fontSize: 9, color: C.textGhost, fontFamily: F.m, marginTop: 1 }}>
+                  {demoCount} demo{demoCount !== 1 ? "s" : ""}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Opt-outs (deals where user cancelled within 30 days of close) */}
+          {/* Prior Mo. CW Opt-Outs (deals where user cancelled within 30 days of close) */}
           {!isBDR && (
-            <div style={{ flex: "0.8 1 55px", textAlign: "right" as const, minWidth: 45 }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Opt-outs</div>
+            <div style={{ flex: "1 1 75px", textAlign: "right" as const, minWidth: 55 }}>
+              <div style={{ fontSize: 9, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const, lineHeight: 1.2 }}>Prior Mo.<br/>CW Opt-Outs</div>
               <div style={{
                 fontSize: 15, fontWeight: 600, fontFamily: F.m,
                 color: optOutCount && optOutCount > 0 ? C.warn : C.textGhost,
@@ -319,7 +336,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
         <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44, marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
             <div style={{ fontSize: 10, color: C.warn, fontFamily: F.b, letterSpacing: "0.04em", whiteSpace: "nowrap" as const }}>
-              OPT-OUT
+              PRIOR MO. OPT-OUT
             </div>
             <div style={{
               flex: 1, height: 4, background: "rgba(0,0,0,0.08)",
@@ -599,7 +616,7 @@ export default function ExecDashboard() {
               <KPI label="Total Commission" value={fmt(totalComm)} accent large />
             </div>
             <div style={{ padding: "0 20px" }}>
-              <KPI label="Opt-outs" value={fmtPct(optOutRate)}
+              <KPI label="Prior Mo. CW Opt-Outs" value={fmtPct(optOutRate)}
                 sub={totalOptOutCount > 0 ? `${totalOptOutCount} deals · ${fmtK(totalOptOutARR)}` : "None"} large />
             </div>
             <div style={{ padding: "0 20px", borderRight: "none" }}>
@@ -726,6 +743,8 @@ export default function ExecDashboard() {
                 demoCount={ae.demoCount || 0}
                 cwRate={ae.cwRate}
                 tboRate={ae.tboRate}
+                priorCwRate={ae.priorCwRate}
+                priorTboRate={ae.priorTboRate}
                 cwRateLabel={cwRateLabel}
                 optOutARR={ae.optOutARR}
                 optOutCount={ae.optOutCount}

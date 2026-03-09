@@ -418,6 +418,9 @@ export interface MonthData {
     cwRate: number | null;
     tboRate: number | null;
     demoCount: number;
+    priorCwRate: number | null;
+    priorTboRate: number | null;
+    priorDemoCount: number;
     attainment: number; commission: number;
     tierBreakdown: { label?: string; amount: number }[];
     closedWonDeals: DealDetail[];
@@ -549,25 +552,9 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
-  // Close rates: cohort-based — of demos held this month, how many converted?
+  // Close rates: cohort-based — of demos held in a given period, how many converted?
   // Match demo deals to CW/TBO deals via shared associated_people person IDs.
   const allDeals = await fetchAllDeals({});
-  const demosInMonth = allDeals.filter((deal: any) => {
-    const d = getDemoHeldDate(deal);
-    if (!d) return false;
-    return d >= startISO && d <= endISO;
-  });
-
-  // Build per-AE demo cohorts: AE → Set of person IDs from demos
-  const demoPeopleByAE: Record<string, Set<string>> = {};
-  for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
-  for (const deal of demosInMonth) {
-    const aeId = OWNER_MAP[getVal(deal, "owner")];
-    if (!aeId || !demoPeopleByAE[aeId]) continue;
-    for (const pid of getDealPersonIds(deal)) {
-      demoPeopleByAE[aeId].add(pid);
-    }
-  }
 
   // TBO deals (current pipeline)
   let tboDeals: any[] = [];
@@ -583,27 +570,54 @@ export async function fetchMonthData(
     for (const pid of getDealPersonIds(deal)) tboPersonIds.add(pid);
   }
 
-  // Compute per-AE cohort conversion rates
-  const demoCounts: Record<string, number> = {};
-  const cwRates: Record<string, number | null> = {};
-  const tboRates: Record<string, number | null> = {};
-  for (const ae of activeAEs) {
-    const demoPeople = demoPeopleByAE[ae.id];
-    const demoCount = demoPeople.size;
-    demoCounts[ae.id] = demoCount;
-    if (demoCount === 0) {
-      cwRates[ae.id] = null;
-      tboRates[ae.id] = null;
-      continue;
+  // Helper: compute cohort conversion rates for demos held in [rangeStart, rangeEnd]
+  function computeCohortRates(rangeStart: string, rangeEnd: string) {
+    const demos = allDeals.filter((deal: any) => {
+      const d = getDemoHeldDate(deal);
+      return d && d >= rangeStart && d <= rangeEnd;
+    });
+    const demoPeopleByAE: Record<string, Set<string>> = {};
+    for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
+    for (const deal of demos) {
+      const aeId = OWNER_MAP[getVal(deal, "owner")];
+      if (!aeId || !demoPeopleByAE[aeId]) continue;
+      for (const pid of getDealPersonIds(deal)) {
+        demoPeopleByAE[aeId].add(pid);
+      }
     }
-    let cwConverted = 0, tboConverted = 0;
-    for (const pid of Array.from(demoPeople)) {
-      if (cwPersonIds.has(pid)) cwConverted++;
-      if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboConverted++;
+    const counts: Record<string, number> = {};
+    const cw: Record<string, number | null> = {};
+    const tbo: Record<string, number | null> = {};
+    for (const ae of activeAEs) {
+      const people = demoPeopleByAE[ae.id];
+      const cnt = people.size;
+      counts[ae.id] = cnt;
+      if (cnt === 0) { cw[ae.id] = null; tbo[ae.id] = null; continue; }
+      let cwC = 0, tboC = 0;
+      for (const pid of Array.from(people)) {
+        if (cwPersonIds.has(pid)) cwC++;
+        if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboC++;
+      }
+      cw[ae.id] = cwC / cnt;
+      tbo[ae.id] = tboC / cnt;
     }
-    cwRates[ae.id] = cwConverted / demoCount;
-    tboRates[ae.id] = tboConverted / demoCount;
+    return { demoCounts: counts, cwRates: cw, tboRates: tbo };
   }
+
+  // Current month rates
+  const { demoCounts, cwRates, tboRates } = computeCohortRates(startISO, endISO);
+
+  // Prior month rates (same cohort logic, previous calendar month)
+  const priorStartISO = churnWindowStart; // already computed above
+  const priorEndISO = churnWindowEnd;
+  const { demoCounts: priorDemoCounts, cwRates: priorCwRates, tboRates: priorTboRates } = computeCohortRates(priorStartISO, priorEndISO);
+
+  // demosInMonth needed for BDR meeting count below
+  const demosInMonth = allDeals.filter((deal: any) => {
+    const d = getDemoHeldDate(deal);
+    if (!d) return false;
+    return d >= startISO && d <= endISO;
+  });
 
   const aeResults = activeAEs.map((ae) => {
     const a = agg[ae.id] || {
@@ -631,6 +645,9 @@ export async function fetchMonthData(
       cwRate,
       tboRate,
       demoCount,
+      priorCwRate: priorCwRates[ae.id] ?? null,
+      priorTboRate: priorTboRates[ae.id] ?? null,
+      priorDemoCount: priorDemoCounts[ae.id] || 0,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
