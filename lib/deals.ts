@@ -84,6 +84,22 @@ function getDealStage(deal: any): string | null {
   return String(s);
 }
 
+/** Extract associated person record IDs from a deal. */
+export function getDealPersonIds(deal: any): string[] {
+  const rawVals = deal?.values?.[DEAL_PARENT_ATTR];
+  const personIds: string[] = [];
+  if (Array.isArray(rawVals)) {
+    for (const v of rawVals) {
+      const id = v?.target_record_id ?? v?.value;
+      if (id) personIds.push(String(id));
+    }
+  } else {
+    const id = getVal(deal, DEAL_PARENT_ATTR);
+    if (id) personIds.push(String(id));
+  }
+  return personIds;
+}
+
 /** Check if value indicates churn (non-empty date). */
 function hasChurnDate(val: any): boolean {
   if (val == null) return false;
@@ -533,34 +549,60 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
-  // Close rates: throughput ratio — CW deals / demos held in the same period.
-  // demo_held_date is not populated on closed deals, so we can't do cohort tracking.
-  // Instead, compare demos held this month vs deals closed this month as a ratio.
+  // Close rates: cohort-based — of demos held this month, how many converted?
+  // Match demo deals to CW/TBO deals via shared associated_people person IDs.
   const allDeals = await fetchAllDeals({});
   const demosInMonth = allDeals.filter((deal: any) => {
     const d = getDemoHeldDate(deal);
     if (!d) return false;
     return d >= startISO && d <= endISO;
   });
-  const demoCounts: Record<string, number> = {};
-  for (const ae of activeAEs) {
-    demoCounts[ae.id] = 0;
-  }
+
+  // Build per-AE demo cohorts: AE → Set of person IDs from demos
+  const demoPeopleByAE: Record<string, Set<string>> = {};
+  for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
   for (const deal of demosInMonth) {
-    const ownerUUID = getVal(deal, "owner");
-    const aeId = OWNER_MAP[ownerUUID];
-    if (!aeId || demoCounts[aeId] === undefined) continue;
-    demoCounts[aeId] += 1;
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (!aeId || !demoPeopleByAE[aeId]) continue;
+    for (const pid of getDealPersonIds(deal)) {
+      demoPeopleByAE[aeId].add(pid);
+    }
   }
 
-  // Count TBO deals per AE (current pipeline, not month-filtered)
+  // TBO deals (current pipeline)
   let tboDeals: any[] = [];
   try { tboDeals = await fetchAllDeals({ stage: "To Be Onboarded" }); } catch {}
-  const tboCounts: Record<string, number> = {};
-  for (const ae of activeAEs) tboCounts[ae.id] = 0;
+
+  // Build sets of person IDs that reached CW (all time) or are in TBO
+  const cwPersonIds = new Set<string>();
+  for (const deal of closedWonDeals) {
+    for (const pid of getDealPersonIds(deal)) cwPersonIds.add(pid);
+  }
+  const tboPersonIds = new Set<string>();
   for (const deal of tboDeals) {
-    const aeId = OWNER_MAP[getVal(deal, "owner")];
-    if (aeId && tboCounts[aeId] !== undefined) tboCounts[aeId] += 1;
+    for (const pid of getDealPersonIds(deal)) tboPersonIds.add(pid);
+  }
+
+  // Compute per-AE cohort conversion rates
+  const demoCounts: Record<string, number> = {};
+  const cwRates: Record<string, number | null> = {};
+  const tboRates: Record<string, number | null> = {};
+  for (const ae of activeAEs) {
+    const demoPeople = demoPeopleByAE[ae.id];
+    const demoCount = demoPeople.size;
+    demoCounts[ae.id] = demoCount;
+    if (demoCount === 0) {
+      cwRates[ae.id] = null;
+      tboRates[ae.id] = null;
+      continue;
+    }
+    let cwConverted = 0, tboConverted = 0;
+    for (const pid of Array.from(demoPeople)) {
+      if (cwPersonIds.has(pid)) cwConverted++;
+      if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboConverted++;
+    }
+    cwRates[ae.id] = cwConverted / demoCount;
+    tboRates[ae.id] = tboConverted / demoCount;
   }
 
   const aeResults = activeAEs.map((ae) => {
@@ -574,10 +616,8 @@ export async function fetchMonthData(
       ae.monthlyQuota, ae.tiers, a.netARR,
     );
     const demoCount = demoCounts[ae.id] || 0;
-    // Demo → CW: closed won deals this month / demos held this month
-    const cwRate = demoCount > 0 ? a.dealCount / demoCount : null;
-    // Demo → TBO: (TBO pipeline + closed won) / demos held this month
-    const tboRate = demoCount > 0 ? (tboCounts[ae.id] + a.dealCount) / demoCount : null;
+    const cwRate = cwRates[ae.id] ?? null;
+    const tboRate = tboRates[ae.id] ?? null;
     const optOutData = optOutAgg.perAE[ae.id];
     return {
       id: ae.id, name: ae.name, role: ae.role,
