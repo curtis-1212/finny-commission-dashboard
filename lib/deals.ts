@@ -77,8 +77,27 @@ export function getDemoHeldDate(deal: any): string | null {
 function getDealStage(deal: any): string | null {
   const s = getVal(deal, "stage");
   if (!s) return null;
-  if (typeof s === "object" && s?.title) return s.title;
+  if (typeof s === "object") {
+    if (s?.title) return s.title;
+    if (s?.status?.title) return s.status.title;
+  }
   return String(s);
+}
+
+/** Extract associated person record IDs from a deal. */
+export function getDealPersonIds(deal: any): string[] {
+  const rawVals = deal?.values?.[DEAL_PARENT_ATTR];
+  const personIds: string[] = [];
+  if (Array.isArray(rawVals)) {
+    for (const v of rawVals) {
+      const id = v?.target_record_id ?? v?.value;
+      if (id) personIds.push(String(id));
+    }
+  } else {
+    const id = getVal(deal, DEAL_PARENT_ATTR);
+    if (id) personIds.push(String(id));
+  }
+  return personIds;
 }
 
 /** Check if value indicates churn (non-empty date). */
@@ -530,25 +549,60 @@ export async function fetchMonthData(
     agg[id].netARR = agg[id].grossARR - agg[id].optOutARR;
   }
 
-  // CW Rate: based on deals with demo_held_date in this month (any stage)
+  // Close rates: cohort-based — of demos held this month, how many converted?
+  // Match demo deals to CW/TBO deals via shared associated_people person IDs.
   const allDeals = await fetchAllDeals({});
-  const demoInMonth = allDeals.filter((deal: any) => {
+  const demosInMonth = allDeals.filter((deal: any) => {
     const d = getDemoHeldDate(deal);
     if (!d) return false;
     return d >= startISO && d <= endISO;
   });
-  const demoCounts: Record<string, { total: number; won: number; tbo: number }> = {};
-  for (const ae of activeAEs) {
-    demoCounts[ae.id] = { total: 0, won: 0, tbo: 0 };
+
+  // Build per-AE demo cohorts: AE → Set of person IDs from demos
+  const demoPeopleByAE: Record<string, Set<string>> = {};
+  for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
+  for (const deal of demosInMonth) {
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (!aeId || !demoPeopleByAE[aeId]) continue;
+    for (const pid of getDealPersonIds(deal)) {
+      demoPeopleByAE[aeId].add(pid);
+    }
   }
-  for (const deal of demoInMonth) {
-    const ownerUUID = getVal(deal, "owner");
-    const aeId = OWNER_MAP[ownerUUID];
-    if (!aeId || !demoCounts[aeId]) continue;
-    demoCounts[aeId].total += 1;
-    const stage = getDealStage(deal);
-    if (stage === "Closed Won") { demoCounts[aeId].won += 1; demoCounts[aeId].tbo += 1; }
-    else if (stage === "To Be Onboarded") { demoCounts[aeId].tbo += 1; }
+
+  // TBO deals (current pipeline)
+  let tboDeals: any[] = [];
+  try { tboDeals = await fetchAllDeals({ stage: "To Be Onboarded" }); } catch {}
+
+  // Build sets of person IDs that reached CW (all time) or are in TBO
+  const cwPersonIds = new Set<string>();
+  for (const deal of closedWonDeals) {
+    for (const pid of getDealPersonIds(deal)) cwPersonIds.add(pid);
+  }
+  const tboPersonIds = new Set<string>();
+  for (const deal of tboDeals) {
+    for (const pid of getDealPersonIds(deal)) tboPersonIds.add(pid);
+  }
+
+  // Compute per-AE cohort conversion rates
+  const demoCounts: Record<string, number> = {};
+  const cwRates: Record<string, number | null> = {};
+  const tboRates: Record<string, number | null> = {};
+  for (const ae of activeAEs) {
+    const demoPeople = demoPeopleByAE[ae.id];
+    const demoCount = demoPeople.size;
+    demoCounts[ae.id] = demoCount;
+    if (demoCount === 0) {
+      cwRates[ae.id] = null;
+      tboRates[ae.id] = null;
+      continue;
+    }
+    let cwConverted = 0, tboConverted = 0;
+    for (const pid of Array.from(demoPeople)) {
+      if (cwPersonIds.has(pid)) cwConverted++;
+      if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboConverted++;
+    }
+    cwRates[ae.id] = cwConverted / demoCount;
+    tboRates[ae.id] = tboConverted / demoCount;
   }
 
   const aeResults = activeAEs.map((ae) => {
@@ -561,9 +615,9 @@ export async function fetchMonthData(
     const { commission, attainment, tierBreakdown } = calcAECommission(
       ae.monthlyQuota, ae.tiers, a.netARR,
     );
-    const dc = demoCounts[ae.id] || { total: 0, won: 0, tbo: 0 };
-    const cwRate = dc.total > 0 ? dc.won / dc.total : null;
-    const tboRate = dc.total > 0 ? dc.tbo / dc.total : null;
+    const demoCount = demoCounts[ae.id] || 0;
+    const cwRate = cwRates[ae.id] ?? null;
+    const tboRate = tboRates[ae.id] ?? null;
     const optOutData = optOutAgg.perAE[ae.id];
     return {
       id: ae.id, name: ae.name, role: ae.role,
@@ -576,7 +630,7 @@ export async function fetchMonthData(
       optOutARR: a.optOutARR, optOutCount: a.optOutCount,
       cwRate,
       tboRate,
-      demoCount: dc.total,
+      demoCount,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
@@ -586,7 +640,7 @@ export async function fetchMonthData(
 
   // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
   let maxMeetings = 0;
-  for (const deal of demoInMonth) {
+  for (const deal of demosInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
     if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
   }

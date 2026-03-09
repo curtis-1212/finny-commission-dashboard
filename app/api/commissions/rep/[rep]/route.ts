@@ -5,7 +5,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, type DealDetail } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, getDealPersonIds, type DealDetail } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
 import { authOptions } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
@@ -175,24 +175,40 @@ export async function GET(
     const optOutARR = repOptOut.optOutARR;
     const optOutDealDetails: DealDetail[] = repOptOut.deals || [];
 
-    // Close rate: Demo Held → TBO and Demo Held → CW
+    // Close rates: cohort-based — of demos held this month, how many converted?
+    // Match demo deals to CW/TBO deals via shared associated_people person IDs.
     const allDeals = await fetchAllDeals({});
-    const demoInMonth = allDeals.filter((deal: any) => {
+    const demosInMonth = allDeals.filter((deal: any) => {
       const d = getDemoHeldDate(deal);
       if (!d) return false;
       return d >= startISO && d <= endISO;
     });
-    let demoCount = 0, demoWon = 0, demoTBO = 0;
-    for (const deal of demoInMonth) {
+
+    // Collect person IDs from this rep's demos
+    const demoPeople = new Set<string>();
+    for (const deal of demosInMonth) {
       if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
-      demoCount += 1;
-      const stage = getVal(deal, "stage");
-      const stageName = typeof stage === "object" && stage?.title ? stage.title : String(stage || "");
-      if (stageName === "Closed Won") { demoWon += 1; demoTBO += 1; }
-      else if (stageName === "To Be Onboarded") { demoTBO += 1; }
+      for (const pid of getDealPersonIds(deal)) demoPeople.add(pid);
     }
-    const cwRate = demoCount > 0 ? demoWon / demoCount : null;
-    const tboRate = demoCount > 0 ? demoTBO / demoCount : null;
+    const demoCount = demoPeople.size;
+
+    // Build sets of person IDs that reached CW (all time) or are in TBO
+    const cwPersonIds = new Set<string>();
+    for (const deal of closedWonAll) {
+      for (const pid of getDealPersonIds(deal)) cwPersonIds.add(pid);
+    }
+    const tboPersonIds = new Set<string>();
+    for (const deal of toBeOnboardedAll) {
+      for (const pid of getDealPersonIds(deal)) tboPersonIds.add(pid);
+    }
+
+    let cwConverted = 0, tboConverted = 0;
+    for (const pid of Array.from(demoPeople)) {
+      if (cwPersonIds.has(pid)) cwConverted++;
+      if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboConverted++;
+    }
+    const cwRate = demoCount > 0 ? cwConverted / demoCount : null;
+    const tboRate = demoCount > 0 ? tboConverted / demoCount : null;
 
     const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
