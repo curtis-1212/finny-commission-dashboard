@@ -547,29 +547,29 @@ export async function fetchMonthData(
     return d >= trailingStart && d <= endISO;
   });
 
-  // Debug logging for close rate investigation
-  console.log("[CLOSE_RATE_DEBUG] trailingStart:", trailingStart, "endISO:", endISO);
-  console.log("[CLOSE_RATE_DEBUG] allDeals count:", allDeals.length);
-  console.log("[CLOSE_RATE_DEBUG] closedWonIds size:", closedWonIds.size, "tboIds size:", tboIds.size);
-  console.log("[CLOSE_RATE_DEBUG] demosInWindow count:", demosInWindow.length);
+  // Debug logging for close rate investigation (console.error for Vercel visibility)
+  console.error("[CLOSE_RATE_DEBUG] trailingStart:", trailingStart, "endISO:", endISO);
+  console.error("[CLOSE_RATE_DEBUG] allDeals count:", allDeals.length);
+  console.error("[CLOSE_RATE_DEBUG] closedWonIds size:", closedWonIds.size, "tboIds size:", tboIds.size);
+  console.error("[CLOSE_RATE_DEBUG] demosInWindow count:", demosInWindow.length);
   if (allDeals.length > 0) {
     const sample = allDeals[0];
-    console.log("[CLOSE_RATE_DEBUG] sample deal id:", JSON.stringify(sample?.id));
-    console.log("[CLOSE_RATE_DEBUG] sample deal demo_held_date raw:", JSON.stringify(sample?.values?.[DEMO_HELD_DATE_ATTR]));
-    console.log("[CLOSE_RATE_DEBUG] sample deal stage raw:", JSON.stringify(sample?.values?.stage));
-    console.log("[CLOSE_RATE_DEBUG] sample deal keys:", Object.keys(sample?.values || {}).join(", "));
+    console.error("[CLOSE_RATE_DEBUG] sample deal id:", JSON.stringify(sample?.id));
+    console.error("[CLOSE_RATE_DEBUG] sample deal demo_held_date raw:", JSON.stringify(sample?.values?.[DEMO_HELD_DATE_ATTR]));
+    console.error("[CLOSE_RATE_DEBUG] sample deal stage raw:", JSON.stringify(sample?.values?.stage));
+    console.error("[CLOSE_RATE_DEBUG] sample deal keys:", Object.keys(sample?.values || {}).join(", "));
   }
   if (closedWonDeals.length > 0) {
     const cwSample = closedWonDeals[0];
-    console.log("[CLOSE_RATE_DEBUG] CW sample id:", JSON.stringify(cwSample?.id));
-    console.log("[CLOSE_RATE_DEBUG] CW sample stage raw:", JSON.stringify(cwSample?.values?.stage));
+    console.error("[CLOSE_RATE_DEBUG] CW sample id:", JSON.stringify(cwSample?.id));
+    console.error("[CLOSE_RATE_DEBUG] CW sample stage raw:", JSON.stringify(cwSample?.values?.stage));
   }
   if (demosInWindow.length > 0) {
     const demoSample = demosInWindow[0];
-    console.log("[CLOSE_RATE_DEBUG] demo sample id:", JSON.stringify(demoSample?.id));
-    console.log("[CLOSE_RATE_DEBUG] demo sample demo_held_date:", getDemoHeldDate(demoSample));
-    console.log("[CLOSE_RATE_DEBUG] demo sample in CW set:", closedWonIds.has(demoSample?.id?.record_id));
-    console.log("[CLOSE_RATE_DEBUG] demo sample in TBO set:", tboIds.has(demoSample?.id?.record_id));
+    console.error("[CLOSE_RATE_DEBUG] demo sample id:", JSON.stringify(demoSample?.id));
+    console.error("[CLOSE_RATE_DEBUG] demo sample demo_held_date:", getDemoHeldDate(demoSample));
+    console.error("[CLOSE_RATE_DEBUG] demo sample in CW set:", closedWonIds.has(demoSample?.id?.record_id));
+    console.error("[CLOSE_RATE_DEBUG] demo sample in TBO set:", tboIds.has(demoSample?.id?.record_id));
   }
 
   const demoCounts: Record<string, { total: number; won: number; tbo: number }> = {};
@@ -589,7 +589,7 @@ export async function fetchMonthData(
   // Debug: log per-AE close rate results
   for (const ae of activeAEs) {
     const dc = demoCounts[ae.id];
-    console.log(`[CLOSE_RATE_DEBUG] ${ae.name}: total=${dc.total} won=${dc.won} tbo=${dc.tbo}`);
+    console.error(`[CLOSE_RATE_DEBUG] ${ae.name}: total=${dc.total} won=${dc.won} tbo=${dc.tbo}`);
   }
 
   const aeResults = activeAEs.map((ae) => {
