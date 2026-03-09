@@ -25,6 +25,7 @@ export const execLiveResponse = {
       dealCount: 6, churnCount: 0, excludedCount: 0, demoCount: 8,
       optOutARR: 15000, optOutCount: 1,
       cwRate: 0.75,
+      priorCwRate: 0.63, priorTboRate: 0.75, priorDemoCount: 8,
       attainment: 1.08, commission: 16200,
       tierBreakdown: [
         { label: "0-100%", amount: 15000 },
@@ -51,6 +52,7 @@ export const execLiveResponse = {
       dealCount: 4, churnCount: 0, excludedCount: 0, demoCount: 6,
       optOutARR: 0, optOutCount: 0,
       cwRate: 0.67,
+      priorCwRate: 0.50, priorTboRate: 0.67, priorDemoCount: 6,
       attainment: 0.852, commission: 5680,
       tierBreakdown: [
         { label: "0-100%", amount: 5680 },
@@ -73,6 +75,7 @@ export const execLiveResponse = {
       dealCount: 3, churnCount: 0, excludedCount: 0, demoCount: 5,
       optOutARR: 20000, optOutCount: 1,
       cwRate: 0.6,
+      priorCwRate: 0.40, priorTboRate: 0.60, priorDemoCount: 5,
       attainment: 0.322, commission: 6030,
       tierBreakdown: [
         { label: "0-100%", amount: 6030 },

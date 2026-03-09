@@ -434,7 +434,7 @@ export default function RepDashboard() {
               <PRow icon="🚀" label="To Be Onboarded" count={aeM.toBeOnboarded.count} arr={aeM.toBeOnboarded.arr} hl />
               <PRow icon="✅" label="Closed Won" count={aeM.closedWon.count} arr={aeM.closedWon.arr} hl />
               {aeM.optOut && aeM.optOut.count > 0 && (
-                <PRow icon="⏱️" label="Opt-outs (≤30 days)" count={aeM.optOut.count} arr={aeM.optOut.arr} neg />
+                <PRow icon="⏱️" label="Prior Mo. CW Opt-Outs (≤30 days)" count={aeM.optOut.count} arr={aeM.optOut.arr} neg />
               )}
               <PRow icon="❌" label="Closed Lost" count={aeM.closedLost.count} arr={aeM.closedLost.arr} />
             </>
