@@ -23,6 +23,8 @@ interface AEMetrics {
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
   commission: number; introCallsScheduled: number;
+  demosBooked?: number; demosHeld?: number;
+  avgDaysToDemo?: number | null;
 }
 interface MonthOption { value: string; label: string }
 interface LeaderboardEntry { id: string; name: string; initials: string; color: string; netARR: number; }
@@ -273,7 +275,7 @@ export default function RepDashboard() {
   const today = new Date().getDate();
   const isCur = selectedMonth === getCurrentMonthValue();
   const msg = getMsg(att, dLeft, isAE);
-  const cur = isAE ? aeM.netARR : bdrM.netMeetings;
+  const cur = isAE ? aeM.netARR : (bdrM.demosHeld ?? bdrM.netMeetings);
   const tgt = isAE ? aeM.monthlyQuota : bdrM.monthlyTarget;
   const rem = Math.max(0, tgt - cur);
 
@@ -363,9 +365,15 @@ export default function RepDashboard() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
               <div>
-                <div style={SL}>{isAE ? "Net ARR" : "Meetings"}</div>
+                <div style={SL}>{isAE ? "Net ARR" : "Demos Held"}</div>
                 <div style={{ ...SV, color: B.primary }}>{isAE ? fmt(cur) : cur}</div>
               </div>
+              {!isAE && (
+                <div style={{ textAlign: "center" as const }}>
+                  <div style={SL}>Booked</div>
+                  <div style={SV}>{bdrM.demosBooked ?? bdrM.netMeetings}</div>
+                </div>
+              )}
               <div style={{ textAlign: "center" as const }}>
                 <div style={SL}>Remaining</div>
                 <div style={SV}>{isAE ? fmt(rem) : Math.ceil(rem)}</div>
@@ -441,8 +449,18 @@ export default function RepDashboard() {
           ) : (
             <>
               <PRow icon="📞" label="Intro Calls" count={bdrM.introCallsScheduled} hl />
-              <PRow icon="📋" label="Qualified Meetings" count={bdrM.netMeetings} hl />
+              <PRow icon="📅" label="Demos Booked" count={bdrM.demosBooked ?? bdrM.netMeetings} hl />
+              <PRow icon="✅" label="Demos Held" count={bdrM.demosHeld ?? bdrM.netMeetings} hl />
               <PRow icon="🎯" label="Monthly Target" count={bdrM.monthlyTarget} />
+              {bdrM.avgDaysToDemo != null && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${B.borderLight}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 16 }}>⏱️</span>
+                    <span style={{ fontSize: 13, color: B.muted, fontFamily: F.body }}>Avg Days to Demo</span>
+                  </div>
+                  <span style={{ fontSize: 15, fontWeight: 600, fontFamily: F.mono, color: B.text }}>{bdrM.avgDaysToDemo}</span>
+                </div>
+              )}
             </>
           )}
         </div>

@@ -24,6 +24,8 @@ interface BDRResult {
   id: string; name: string; role: string; initials: string; color: string; type: "bdr";
   monthlyQuota: number;
   totalMeetings?: number; netMeetings?: number;
+  demosBooked?: number; demosHeld?: number;
+  avgDaysToDemo?: number | null;
   attainment?: number; commission?: number;
 }
 type RepResult = AEResult | BDRResult;
@@ -151,13 +153,14 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, demosBooked, demosHeld, avgDaysToDemo, pace, onClick }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
   demoCount?: number; cwRate?: number | null; tboRate?: number | null;
   priorCwRate?: number | null; priorTboRate?: number | null;
   cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
+  demosBooked?: number; demosHeld?: number; avgDaysToDemo?: number | null;
   pace?: number | null;
   onClick?: () => void;
 }) {
@@ -202,20 +205,27 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 
         {/* Metrics row */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
-          {/* Net ARR / Meetings */}
+          {/* Net ARR / Demos Booked */}
           <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
-            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Mtgs" : "Net ARR"}</div>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Booked" : "Net ARR"}</div>
             <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>
-              {isBDR ? actual : fmtK(actual)}
+              {isBDR ? (demosBooked ?? actual) : fmtK(actual)}
             </div>
           </div>
 
-          {/* Gross ARR */}
-          {!isBDR && (
+          {/* Gross ARR / Demos Held */}
+          {!isBDR ? (
             <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Gross ARR</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec, letterSpacing: "-0.02em" }}>
                 {fmtK(grossARR ?? 0)}
+              </div>
+            </div>
+          ) : (
+            <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Held</div>
+              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>
+                {demosHeld ?? actual}
               </div>
             </div>
           )}
@@ -231,11 +241,21 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             </div>
           </div>
 
-          {/* Deals */}
+          {/* Deals / Target */}
           <div style={{ flex: "0.7 1 45px", textAlign: "right" as const, minWidth: 40 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Target" : "Deals"}</div>
             <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
           </div>
+
+          {/* Avg Days to Demo (BDR only) */}
+          {isBDR && (
+            <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Avg Days</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec, letterSpacing: "-0.02em" }}>
+                {avgDaysToDemo != null ? avgDaysToDemo : "—"}
+              </div>
+            </div>
+          )}
 
 
           {/* TBO Rate */}
@@ -781,6 +801,9 @@ export default function ExecDashboard() {
                   commission={bdrResult.commission || 0}
                   deals={0}
                   type="bdr"
+                  demosBooked={bdrResult.demosBooked}
+                  demosHeld={bdrResult.demosHeld}
+                  avgDaysToDemo={bdrResult.avgDaysToDemo}
                   pace={pace}
                 />
               </>

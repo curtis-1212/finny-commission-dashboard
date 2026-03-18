@@ -97,6 +97,8 @@ export const execLiveResponse = {
     initials: "MZ", color: "#8B5CF6", type: "bdr",
     monthlyQuota: 25,
     totalMeetings: 28, netMeetings: 28,
+    demosBooked: 32, demosHeld: 28,
+    avgDaysToDemo: 4.2,
     attainment: 1.12, commission: 924,
   },
   meta: { fetchedAt, monthLabel, warning: "" },
@@ -213,6 +215,7 @@ export const repResponses: Record<string, object> = {
     metrics: {
       netMeetings: 28, monthlyTarget: 25, attainment: 1.12,
       commission: 924, introCallsScheduled: 6,
+      demosBooked: 32, demosHeld: 28, avgDaysToDemo: 4.2,
     },
     meta: { fetchedAt, monthLabel, selectedMonth },
     availableMonths,

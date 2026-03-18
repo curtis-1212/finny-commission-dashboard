@@ -103,25 +103,38 @@ export async function GET(
     );
 
     if (repId === "max") {
-      // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
+      // BDR metrics: demos booked vs demos held + avg days from creation to demo
       const allDeals = await fetchAllDeals({});
       const demoInMonth = allDeals.filter((deal: any) => {
         const d = getDemoHeldDate(deal);
         if (!d) return false;
         return d >= startISO && d <= endISO;
       });
-      
-      let meetings = 0, introCallCount = 0;
+
+      const todayISO = new Date().toISOString().slice(0, 10);
+      let demosBooked = 0, demosHeld = 0, introCallCount = 0;
+      const daysToDemo: number[] = [];
       for (const deal of demoInMonth) {
-        if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) meetings += 1;
+        if (getVal(deal, "lead_owner") !== process.env.ATTIO_MAX_UUID) continue;
+        demosBooked += 1;
+        const demoDate = getDemoHeldDate(deal);
+        if (demoDate && demoDate <= todayISO) demosHeld += 1;
+        const createdAt = deal?.created_at;
+        if (createdAt && demoDate) {
+          const diffMs = new Date(demoDate).getTime() - new Date(createdAt).getTime();
+          if (diffMs >= 0) daysToDemo.push(diffMs / (1000 * 60 * 60 * 24));
+        }
       }
       for (const deal of introInMonth) {
         if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) introCallCount += 1;
       }
-      const { commission, attainment, monthlyQuota } = calcBDRCommission(meetings, selectedMonth);
+      const avgDaysToDemo = daysToDemo.length > 0
+        ? Math.round((daysToDemo.reduce((a, b) => a + b, 0) / daysToDemo.length) * 10) / 10
+        : null;
+      const { commission, attainment, monthlyQuota } = calcBDRCommission(demosHeld, selectedMonth);
       return NextResponse.json({
         rep: { id: "max", name: BDR_DATA.name, role: BDR_DATA.role, initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr" },
-        metrics: { netMeetings: meetings, monthlyTarget: monthlyQuota, attainment, commission, introCallsScheduled: introCallCount },
+        metrics: { netMeetings: demosHeld, demosBooked, demosHeld, avgDaysToDemo, monthlyTarget: monthlyQuota, attainment, commission, introCallsScheduled: introCallCount },
         meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
         availableMonths: getAvailableMonths(),
       });

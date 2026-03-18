@@ -430,6 +430,8 @@ export interface MonthData {
     id: string; name: string; role: string; initials: string; color: string;
     type: "bdr"; monthlyQuota: number;
     totalMeetings: number; netMeetings: number;
+    demosBooked: number; demosHeld: number;
+    avgDaysToDemo: number | null;
     attainment: number; commission: number;
   };
   meta: {
@@ -655,24 +657,40 @@ export async function fetchMonthData(
     };
   });
 
-  // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
-  let maxMeetings = 0;
+  // BDR metrics: demos booked (all in month) vs demos held (date <= today)
+  const todayISO = new Date().toISOString().slice(0, 10);
+  let demosBooked = 0, demosHeld = 0;
+  const daysToDemo: number[] = [];
   for (const deal of demosInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
-    if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
+    if (leadOwner !== process.env.ATTIO_MAX_UUID) continue;
+    demosBooked += 1;
+    const demoDate = getDemoHeldDate(deal);
+    if (demoDate && demoDate <= todayISO) demosHeld += 1;
+    // Avg time from deal creation to demo held
+    const createdAt = deal?.created_at;
+    if (createdAt && demoDate) {
+      const diffMs = new Date(demoDate).getTime() - new Date(createdAt).getTime();
+      if (diffMs >= 0) daysToDemo.push(diffMs / (1000 * 60 * 60 * 24));
+    }
   }
+  const avgDaysToDemo = daysToDemo.length > 0
+    ? Math.round((daysToDemo.reduce((a, b) => a + b, 0) / daysToDemo.length) * 10) / 10
+    : null;
 
   const {
     commission: bdrCommission,
     attainment: bdrAttainment,
     monthlyQuota: bdrMonthlyQuota,
-  } = calcBDRCommission(maxMeetings, selectedMonthStr);
+  } = calcBDRCommission(demosHeld, selectedMonthStr);
   const bdrResult = {
     id: "max", name: BDR_DATA.name, role: BDR_DATA.role,
     initials: BDR_DATA.initials, color: BDR_DATA.color,
     type: "bdr" as const,
     monthlyQuota: bdrMonthlyQuota,
-    totalMeetings: maxMeetings, netMeetings: maxMeetings,
+    totalMeetings: demosHeld, netMeetings: demosHeld,
+    demosBooked, demosHeld,
+    avgDaysToDemo,
     attainment: bdrAttainment, commission: bdrCommission,
   };
 
