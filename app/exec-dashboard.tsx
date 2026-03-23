@@ -28,6 +28,8 @@ interface BDRResult {
 }
 type RepResult = AEResult | BDRResult;
 interface MonthOption { value: string; label: string }
+interface ApprovalEntry { repId: string; name: string; approved: boolean; approvedAt: string | null }
+interface VerificationStatus { month: string; cycleStarted: boolean; startedAt?: string; approvals: ApprovalEntry[]; allApproved: boolean }
 
 // ─── Brand: FINNY Style Guide (Light Mode) ──────────────────────────────────
 const C = {
@@ -480,6 +482,29 @@ export default function ExecDashboard() {
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
   const [dealModalAE, setDealModalAE] = useState<AEResult | null>(null);
 
+  const [verification, setVerification] = useState<VerificationStatus | null>(null);
+  const [startingVerification, setStartingVerification] = useState(false);
+
+  const fetchVerification = useCallback(async (month: string) => {
+    try {
+      const res = await fetch(`/api/approval/status?month=${month}`);
+      if (res.ok) setVerification(await res.json());
+    } catch {}
+  }, []);
+
+  const handleStartVerification = useCallback(async () => {
+    setStartingVerification(true);
+    try {
+      const res = await fetch("/api/approval/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      if (res.ok) await fetchVerification(selectedMonth);
+    } catch {}
+    setStartingVerification(false);
+  }, [selectedMonth, fetchVerification]);
+
   const fetchLive = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -495,7 +520,7 @@ export default function ExecDashboard() {
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }, [selectedMonth]);
 
-  useEffect(() => { if (isLive) fetchLive(); }, [isLive, fetchLive]);
+  useEffect(() => { if (isLive) { fetchLive(); fetchVerification(selectedMonth); } }, [isLive, fetchLive, fetchVerification, selectedMonth]);
   useEffect(() => { if (!isLive) return; const i = setInterval(fetchLive, 60000); return () => clearInterval(i); }, [isLive, fetchLive]);
 
   // ─── Computed KPIs ──────────────────────────────────────────────────────
@@ -644,6 +669,132 @@ export default function ExecDashboard() {
             <div style={{ fontSize: 13, color: C.textDim, fontFamily: F.b, textAlign: "center", maxWidth: 280, lineHeight: 1.5 }}>
               Click CONNECT above to pull live commission data from your CRM.
             </div>
+          </div>
+        )}
+
+        {/* ─── VERIFICATION STATUS ─────────────────────────────────── */}
+        {isLive && (
+          <div style={{
+            marginTop: 12,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+            overflow: "hidden",
+          }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "14px 20px",
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: C.textDim,
+                fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+              }}>
+                Deal Verification
+              </div>
+              {verification?.allApproved && (
+                <div style={{
+                  fontSize: 11, fontWeight: 600, color: C.accent,
+                  fontFamily: F.b, display: "flex", alignItems: "center", gap: 4,
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, display: "inline-block" }} />
+                  All Approved
+                </div>
+              )}
+            </div>
+
+            {!verification?.cycleStarted ? (
+              <div style={{ padding: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 13, color: C.textSec, fontFamily: F.b }}>
+                    No verification cycle for {monthLabel || selectedMonth}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.textGhost, fontFamily: F.b, marginTop: 2 }}>
+                    Start a cycle to have AEs review and approve their deal lists.
+                  </div>
+                </div>
+                <button
+                  onClick={handleStartVerification}
+                  disabled={startingVerification}
+                  style={{
+                    padding: "8px 16px", borderRadius: 8,
+                    border: `1px solid ${C.primary}40`,
+                    background: C.primaryFaint,
+                    color: C.primary,
+                    cursor: startingVerification ? "not-allowed" : "pointer",
+                    fontSize: 12, fontWeight: 600, fontFamily: F.b,
+                    opacity: startingVerification ? 0.6 : 1,
+                    whiteSpace: "nowrap" as const,
+                  }}
+                >
+                  {startingVerification ? "Starting…" : "Start Verification"}
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: "16px 20px" }}>
+                {/* Progress summary */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <div style={{
+                    fontSize: 12, color: C.textSec, fontFamily: F.b,
+                  }}>
+                    {verification.approvals.filter((a) => a.approved).length} of {verification.approvals.length} AEs approved
+                  </div>
+                  <div style={{
+                    flex: 1, height: 4, background: "rgba(0,0,0,0.06)",
+                    borderRadius: 100, overflow: "hidden",
+                  }}>
+                    <div style={{
+                      height: "100%", borderRadius: 100,
+                      width: `${verification.approvals.length > 0 ? (verification.approvals.filter((a) => a.approved).length / verification.approvals.length) * 100 : 0}%`,
+                      background: verification.allApproved
+                        ? C.accent
+                        : `linear-gradient(90deg, ${C.primary}, ${C.primaryLight})`,
+                      transition: "width 0.5s ease",
+                    }} />
+                  </div>
+                </div>
+
+                {/* Per-AE status */}
+                {verification.approvals.map((a) => (
+                  <div key={a.repId} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "10px 0",
+                    borderBottom: `1px solid ${C.border}`,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{
+                        width: 20, height: 20, borderRadius: 6,
+                        background: a.approved ? `${C.accent}15` : "rgba(0,0,0,0.04)",
+                        border: `1px solid ${a.approved ? `${C.accent}30` : "rgba(0,0,0,0.08)"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 10, color: a.approved ? C.accent : C.textGhost,
+                      }}>
+                        {a.approved ? "✓" : "·"}
+                      </div>
+                      <span style={{
+                        fontSize: 13, fontWeight: 500, fontFamily: F.b,
+                        color: a.approved ? C.text : C.textDim,
+                      }}>{a.name}</span>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontFamily: F.b,
+                      color: a.approved ? C.accent : C.textGhost,
+                    }}>
+                      {a.approved && a.approvedAt
+                        ? `Approved ${new Date(a.approvedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                        : "Pending"}
+                    </span>
+                  </div>
+                ))}
+
+                {/* Started at */}
+                {verification.startedAt && (
+                  <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b, marginTop: 10 }}>
+                    Cycle started {new Date(verification.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
