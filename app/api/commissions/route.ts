@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
       {
         ae: data.aeResults,
         bdr: data.bdrResult,
+        forecast: data.forecast,
         meta: data.meta,
         availableMonths: getAvailableMonths(),
         mode: "live",

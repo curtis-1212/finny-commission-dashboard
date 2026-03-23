@@ -30,6 +30,23 @@ type RepResult = AEResult | BDRResult;
 interface MonthOption { value: string; label: string }
 interface ApprovalEntry { repId: string; name: string; approved: boolean; approvedAt: string | null }
 interface VerificationStatus { month: string; cycleStarted: boolean; startedAt?: string; approvals: ApprovalEntry[]; allApproved: boolean }
+interface AEForecast {
+  scheduledDemos: number;
+  trailing60DayCwRate: number | null;
+  avgFunnelDays: number | null;
+  avgDealSize: number;
+  projectedARR: { low: number; mid: number; high: number };
+}
+interface ForecastData {
+  perAE: Record<string, AEForecast>;
+  team: {
+    totalScheduledDemos: number;
+    blendedCwRate: number | null;
+    avgFunnelDays: number | null;
+    projectedARR: { low: number; mid: number; high: number };
+    totalQuota: number;
+  };
+}
 
 // ─── Brand: FINNY Style Guide (Light Mode) ──────────────────────────────────
 const C = {
@@ -153,7 +170,7 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick, forecastARR }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
   demoCount?: number; cwRate?: number | null; tboRate?: number | null;
@@ -162,6 +179,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
   optOutARR?: number; optOutCount?: number;
   pace?: number | null;
   onClick?: () => void;
+  forecastARR?: { low: number; mid: number; high: number } | null;
 }) {
   const pct = Math.min(att, 1.5);
   const threshold = pace ?? 1.0;
@@ -305,33 +323,66 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
       )}
 
       {/* Row 3: Plan vs Actual bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44 }}>
-        <div style={{
-          flex: 1, height: 6, background: "rgba(0,0,0,0.08)",
-          borderRadius: 100, position: "relative", overflow: "visible",
-        }}>
-          {/* Quota marker */}
-          <div style={{
-            position: "absolute",
-            left: `${Math.min(100 / Math.max(pct, 1), 100)}%`,
-            top: -2, width: 1, height: 10,
-            background: "rgba(0,0,0,0.2)",
-            zIndex: 2,
-          }} />
-          {/* Fill */}
-          <div style={{
-            height: "100%", borderRadius: 100,
-            width: `${Math.min(pct * 100 / Math.max(pct, 1), 100)}%`,
-            background: barColor,
-            transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
-            minWidth: att > 0 ? 6 : 0,
-          }} />
-        </div>
-        {/* ARR and deals label - shows gross ARR (closed won total) */}
-        <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
-          {isBDR ? `${quota} mtgs` : `${fmtK(grossARR ?? actual)} (${deals} deal${deals !== 1 ? "s" : ""})`}
-        </div>
-      </div>
+      {(() => {
+        const hasForecast = !isBDR && forecastARR && forecastARR.mid > 0;
+        const projectedTotal = hasForecast ? actual + forecastARR!.mid : actual;
+        const projAtt = quota > 0 ? projectedTotal / quota : 0;
+        const projPct = Math.min(projAtt, 1.5);
+        const barMax = Math.max(pct, projPct, 1);
+
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 44 }}>
+            <div style={{
+              flex: 1, height: 6, background: "rgba(0,0,0,0.08)",
+              borderRadius: 100, position: "relative", overflow: "visible",
+            }}>
+              {/* Quota marker */}
+              <div style={{
+                position: "absolute",
+                left: `${Math.min(100 / barMax, 100)}%`,
+                top: -2, width: 1, height: 10,
+                background: "rgba(0,0,0,0.2)",
+                zIndex: 2,
+              }} />
+              {/* Forecast striped extension */}
+              {hasForecast && (
+                <div style={{
+                  position: "absolute", top: 0,
+                  left: `${Math.min(pct * 100 / barMax, 100)}%`,
+                  height: "100%",
+                  width: `${Math.max(Math.min(projPct * 100 / barMax, 100) - Math.min(pct * 100 / barMax, 100), 0)}%`,
+                  background: `repeating-linear-gradient(
+                    -45deg,
+                    ${C.primary}30,
+                    ${C.primary}30 2px,
+                    ${C.primary}10 2px,
+                    ${C.primary}10 4px
+                  )`,
+                  borderRadius: "0 100px 100px 0",
+                  transition: "width 0.8s cubic-bezier(0.4,0,0.2,1), left 0.8s cubic-bezier(0.4,0,0.2,1)",
+                }} />
+              )}
+              {/* Actual fill */}
+              <div style={{
+                height: "100%", borderRadius: 100,
+                width: `${Math.min(pct * 100 / barMax, 100)}%`,
+                background: barColor,
+                transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
+                minWidth: att > 0 ? 6 : 0,
+              }} />
+            </div>
+            {/* ARR and deals label */}
+            <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
+              {isBDR
+                ? `${quota} mtgs`
+                : hasForecast
+                  ? `${fmtK(actual)} + ${fmtK(forecastARR!.mid)} proj`
+                  : `${fmtK(grossARR ?? actual)} (${deals} deal${deals !== 1 ? "s" : ""})`
+              }
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Row 3: Opt-out ARR bar (only shown if there are opt-outs) */}
       {!isBDR && optOutARR != null && optOutARR > 0 && (
@@ -360,6 +411,139 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORECAST CARD
+// ═══════════════════════════════════════════════════════════════════════════════
+function ForecastCard({ forecast, totalNetARR, totalQuota }: {
+  forecast: ForecastData; totalNetARR: number; totalQuota: number;
+}) {
+  const team = forecast.team;
+  const projLow = totalNetARR + team.projectedARR.low;
+  const projMid = totalNetARR + team.projectedARR.mid;
+  const projHigh = totalNetARR + team.projectedARR.high;
+  const projAttLow = totalQuota > 0 ? projLow / totalQuota : 0;
+  const projAttMid = totalQuota > 0 ? projMid / totalQuota : 0;
+  const projAttHigh = totalQuota > 0 ? projHigh / totalQuota : 0;
+
+  // Gauge: show range from 0 to max(150% quota, projHigh)
+  const gaugeMax = Math.max(totalQuota * 1.5, projHigh);
+  const actualPct = Math.min((totalNetARR / gaugeMax) * 100, 100);
+  const projLowPct = Math.min((projLow / gaugeMax) * 100, 100);
+  const projHighPct = Math.min((projHigh / gaugeMax) * 100, 100);
+  const quotaPct = Math.min((totalQuota / gaugeMax) * 100, 100);
+
+  return (
+    <div style={{
+      marginTop: 12,
+      borderRadius: 12,
+      border: `1px solid ${C.primary}25`,
+      background: C.card,
+      overflow: "hidden",
+    }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 20px",
+        borderBottom: `1px solid ${C.border}`,
+        background: `${C.primary}06`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            fontSize: 11, fontWeight: 600, color: C.primary,
+            fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+          }}>
+            Month-End Forecast
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+          Based on 60-day trailing rates
+        </div>
+      </div>
+
+      {/* Gauge */}
+      <div style={{ padding: "18px 20px 12px" }}>
+        <div style={{ position: "relative", height: 32, background: "rgba(0,0,0,0.05)", borderRadius: 8, overflow: "visible" }}>
+          {/* Projected range (low to high) */}
+          <div style={{
+            position: "absolute", top: 0, left: `${actualPct}%`, height: "100%",
+            width: `${Math.max(projHighPct - actualPct, 0)}%`,
+            background: `repeating-linear-gradient(
+              -45deg,
+              ${C.primary}18,
+              ${C.primary}18 4px,
+              ${C.primary}08 4px,
+              ${C.primary}08 8px
+            )`,
+            borderRadius: "0 8px 8px 0",
+            transition: "all 0.8s cubic-bezier(0.4,0,0.2,1)",
+          }} />
+          {/* Actual fill */}
+          <div style={{
+            position: "absolute", top: 0, left: 0, height: "100%",
+            width: `${actualPct}%`,
+            background: `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`,
+            borderRadius: actualPct >= projHighPct ? 8 : "8px 0 0 8px",
+            transition: "width 1s cubic-bezier(0.4,0,0.2,1)",
+          }} />
+          {/* Quota marker */}
+          <div style={{
+            position: "absolute", left: `${quotaPct}%`,
+            top: -4, width: 2, height: 40,
+            background: "rgba(0,0,0,0.25)", zIndex: 2,
+          }} />
+          {/* Mid projection marker */}
+          <div style={{
+            position: "absolute", left: `${Math.min((projMid / gaugeMax) * 100, 100)}%`,
+            top: -2, width: 2, height: 36,
+            background: C.primary,
+            zIndex: 3,
+            opacity: 0.6,
+          }} />
+        </div>
+
+        {/* Labels below gauge */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+          <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.m }}>
+            Actual: {fmtK(totalNetARR)}
+          </div>
+          <div style={{ display: "flex", gap: 16 }}>
+            <span style={{ fontSize: 10, color: C.textDim, fontFamily: F.m }}>
+              Low: {fmtK(projLow)} ({fmtPct0(projAttLow)})
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: C.primary, fontFamily: F.m }}>
+              Expected: {fmtK(projMid)} ({fmtPct0(projAttMid)})
+            </span>
+            <span style={{ fontSize: 10, color: C.textDim, fontFamily: F.m }}>
+              High: {fmtK(projHigh)} ({fmtPct0(projAttHigh)})
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Key metrics row */}
+      <div style={{
+        display: "flex", borderTop: `1px solid ${C.border}`,
+      }}>
+        {[
+          { label: "Scheduled Demos", value: String(team.totalScheduledDemos), sub: "remaining this month" },
+          { label: "60-Day CW Rate", value: team.blendedCwRate != null ? fmtPct(team.blendedCwRate) : "—", sub: "intro → closed/won" },
+          { label: "Avg Funnel Days", value: team.avgFunnelDays != null ? `${team.avgFunnelDays}d` : "—", sub: "demo → close" },
+          { label: "Projected Add'l", value: fmtK(team.projectedARR.mid), sub: "expected from pipeline" },
+        ].map((m, i) => (
+          <div key={i} style={{
+            flex: 1, padding: "14px 16px",
+            borderRight: i < 3 ? `1px solid ${C.border}` : "none",
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 500, color: C.textDim, fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const, marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>{m.value}</div>
+            <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b, marginTop: 2 }}>{m.sub}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -480,6 +664,7 @@ export default function ExecDashboard() {
 
   const [aeResults, setAeResults] = useState<AEResult[]>([]);
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
+  const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [dealModalAE, setDealModalAE] = useState<AEResult | null>(null);
 
   const [verification, setVerification] = useState<VerificationStatus | null>(null);
@@ -513,6 +698,7 @@ export default function ExecDashboard() {
       const data = await res.json();
       setAeResults(data.ae || []);
       setBdrResult(data.bdr || null);
+      setForecast(data.forecast || null);
       setFetchedAt(data.meta?.fetchedAt || "");
       setMonthLabel(data.meta?.monthLabel || "");
       setWarning(data.meta?.warning || "");
@@ -648,6 +834,15 @@ export default function ExecDashboard() {
               <KPI label="Deals Closed" value={String(totalDeals)} large />
             </div>
           </div>
+        )}
+
+        {/* ─── MONTH-END FORECAST ─────────────────────────────────── */}
+        {isLive && forecast && aeResults.length > 0 && (
+          <ForecastCard
+            forecast={forecast}
+            totalNetARR={totalNetARR}
+            totalQuota={totalQuota}
+          />
         )}
 
         {/* ─── "Connect to see data" state ──────────────────────────── */}
@@ -902,6 +1097,7 @@ export default function ExecDashboard() {
                 type="ae"
                 pace={pace}
                 onClick={() => setDealModalAE(ae)}
+                forecastARR={forecast?.perAE[ae.id]?.projectedARR ?? null}
               />
             ))}
 
@@ -989,69 +1185,109 @@ export default function ExecDashboard() {
             </div>
 
             {/* Quota bar */}
-            <div style={{ position: "relative", height: 40, background: "rgba(0,0,0,0.06)", borderRadius: 8, overflow: "hidden" }}>
-              {/* Quota fill (background) */}
-              <div style={{
-                position: "absolute", top: 0, left: 0, height: "100%",
-                width: "100%",
-                background: `repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 20%)`,
-                borderRadius: 8,
-              }} />
-              {/* Actual fill */}
-              <div style={{
-                position: "absolute", top: 0, left: 0, height: "100%",
-                width: `${Math.min(teamAttainment * 100, 150) / 1.5}%`,
-                background: teamAttainment >= 1.0
-                  ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
-                  : `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`,
-                borderRadius: 8,
-                transition: "width 1s cubic-bezier(0.4,0,0.2,1)",
-                display: "flex", alignItems: "center", justifyContent: "flex-end",
-                paddingRight: 12,
-              }}>
-                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: F.m, color: "#fff" }}>
-                  {fmt(totalNetARR)}
-                </span>
-              </div>
-              {/* Quota marker line */}
-              <div style={{
-                position: "absolute",
-                left: `${100 / 1.5}%`,
-                top: 0, width: 2, height: "100%",
-                background: "rgba(0,0,0,0.2)",
-                zIndex: 2,
-              }} />
-              {/* Quota label */}
-              <div style={{
-                position: "absolute",
-                left: `${100 / 1.5}%`,
-                top: -2,
-                transform: "translateX(-100%)",
-                fontSize: 10, color: C.textDim, fontFamily: F.m,
-                paddingRight: 6,
-                lineHeight: "40px",
-              }}>
-                {fmt(totalQuota)} quota
-              </div>
-            </div>
+            {(() => {
+              const teamProjMid = forecast ? totalNetARR + forecast.team.projectedARR.mid : totalNetARR;
+              const teamProjHigh = forecast ? totalNetARR + forecast.team.projectedARR.high : totalNetARR;
+              const barScale = 1.5; // bar shows up to 150% of quota
+              const actualFillPct = Math.min(teamAttainment * 100, 150) / barScale;
+              const projMidPct = forecast ? Math.min((teamProjMid / totalQuota) * 100, 150) / barScale : actualFillPct;
+              const projHighPct = forecast ? Math.min((teamProjHigh / totalQuota) * 100, 150) / barScale : actualFillPct;
 
-            {/* Legend */}
-            <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 10, height: 3, borderRadius: 2, background: C.primary }} />
-                <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Actual</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(0,0,0,0.2)" }} />
-                <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Quota</span>
-              </div>
-              {totalOptOutARR > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 10, height: 3, borderRadius: 2, background: C.warn }} />
-                  <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Opt-outs: {fmtK(totalOptOutARR)}</span>
-                </div>
-              )}
-            </div>
+              return (
+                <>
+                  <div style={{ position: "relative", height: 40, background: "rgba(0,0,0,0.06)", borderRadius: 8, overflow: "hidden" }}>
+                    {/* Quota fill (background) */}
+                    <div style={{
+                      position: "absolute", top: 0, left: 0, height: "100%",
+                      width: "100%",
+                      background: `repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 20%)`,
+                      borderRadius: 8,
+                    }} />
+                    {/* Forecast striped extension */}
+                    {forecast && forecast.team.projectedARR.mid > 0 && (
+                      <div style={{
+                        position: "absolute", top: 0,
+                        left: `${actualFillPct}%`,
+                        height: "100%",
+                        width: `${Math.max(projHighPct - actualFillPct, 0)}%`,
+                        background: `repeating-linear-gradient(
+                          -45deg,
+                          ${C.primary}20,
+                          ${C.primary}20 4px,
+                          ${C.primary}08 4px,
+                          ${C.primary}08 8px
+                        )`,
+                        borderRadius: "0 8px 8px 0",
+                        transition: "all 0.8s cubic-bezier(0.4,0,0.2,1)",
+                      }} />
+                    )}
+                    {/* Actual fill */}
+                    <div style={{
+                      position: "absolute", top: 0, left: 0, height: "100%",
+                      width: `${actualFillPct}%`,
+                      background: teamAttainment >= 1.0
+                        ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
+                        : `linear-gradient(90deg, ${C.primary}, ${C.primaryMuted})`,
+                      borderRadius: actualFillPct >= projHighPct ? 8 : "8px 0 0 8px",
+                      transition: "width 1s cubic-bezier(0.4,0,0.2,1)",
+                      display: "flex", alignItems: "center", justifyContent: "flex-end",
+                      paddingRight: 12,
+                    }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, fontFamily: F.m, color: "#fff" }}>
+                        {fmt(totalNetARR)}
+                      </span>
+                    </div>
+                    {/* Quota marker line */}
+                    <div style={{
+                      position: "absolute",
+                      left: `${100 / barScale}%`,
+                      top: 0, width: 2, height: "100%",
+                      background: "rgba(0,0,0,0.2)",
+                      zIndex: 2,
+                    }} />
+                    {/* Quota label */}
+                    <div style={{
+                      position: "absolute",
+                      left: `${100 / barScale}%`,
+                      top: -2,
+                      transform: "translateX(-100%)",
+                      fontSize: 10, color: C.textDim, fontFamily: F.m,
+                      paddingRight: 6,
+                      lineHeight: "40px",
+                    }}>
+                      {fmt(totalQuota)} quota
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 10, height: 3, borderRadius: 2, background: C.primary }} />
+                      <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Actual</span>
+                    </div>
+                    {forecast && forecast.team.projectedARR.mid > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{
+                          width: 10, height: 3, borderRadius: 2,
+                          background: `repeating-linear-gradient(-45deg, ${C.primary}30, ${C.primary}30 2px, ${C.primary}10 2px, ${C.primary}10 4px)`,
+                        }} />
+                        <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Projected: {fmtK(teamProjMid)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 10, height: 3, borderRadius: 2, background: "rgba(0,0,0,0.2)" }} />
+                      <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Quota</span>
+                    </div>
+                    {totalOptOutARR > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ width: 10, height: 3, borderRadius: 2, background: C.warn }} />
+                        <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>Opt-outs: {fmtK(totalOptOutARR)}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 

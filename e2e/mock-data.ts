@@ -99,6 +99,38 @@ export const execLiveResponse = {
     totalMeetings: 28, netMeetings: 28,
     attainment: 1.12, commission: 924,
   },
+  forecast: {
+    perAE: {
+      jason: {
+        scheduledDemos: 3,
+        trailing60DayCwRate: 0.68,
+        avgFunnelDays: 18,
+        avgDealSize: 32500,
+        projectedARR: { low: 46410, mid: 66300, high: 79560 },
+      },
+      kelcy: {
+        scheduledDemos: 4,
+        trailing60DayCwRate: 0.55,
+        avgFunnelDays: 22,
+        avgDealSize: 35500,
+        projectedARR: { low: 54670, mid: 78100, high: 93720 },
+      },
+      roy: {
+        scheduledDemos: 5,
+        trailing60DayCwRate: 0.42,
+        avgFunnelDays: 25,
+        avgDealSize: 29000,
+        projectedARR: { low: 42630, mid: 60900, high: 73080 },
+      },
+    },
+    team: {
+      totalScheduledDemos: 12,
+      blendedCwRate: 0.55,
+      avgFunnelDays: 21,
+      projectedARR: { low: 143710, mid: 205300, high: 246360 },
+      totalQuota: 541666.67,
+    },
+  },
   meta: { fetchedAt, monthLabel, warning: "" },
   availableMonths,
   mode: "live",
