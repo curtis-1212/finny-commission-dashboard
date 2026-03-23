@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/daily-commission",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/start-verification",
+      "schedule": "0 22 28-31 * *"
     }
   ]
 }

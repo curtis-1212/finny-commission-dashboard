@@ -63,6 +63,11 @@ export async function middleware(request: NextRequest) {
       if (path === "/api/commissions") {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+
+      // Trying to access exec-only approval start -> 403
+      if (path === "/api/approval/start") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
     // Exec users: allow all routes
   }

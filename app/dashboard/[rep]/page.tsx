@@ -220,6 +220,55 @@ export default function RepDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showDeals, setShowDeals] = useState(false);
 
+  const [verificationApproved, setVerificationApproved] = useState<boolean | null>(null);
+  const [verificationApprovedAt, setVerificationApprovedAt] = useState<string | null>(null);
+  const [verificationActive, setVerificationActive] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+
+  const fetchVerification = useCallback(async (month: string) => {
+    try {
+      const res = await fetch(`/api/approval/status?month=${month}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setVerificationActive(data.cycleStarted);
+      if (data.cycleStarted && data.approvals.length > 0) {
+        const mine = data.approvals[0];
+        setVerificationApproved(mine.approved);
+        setVerificationApprovedAt(mine.approvedAt);
+      } else {
+        setVerificationApproved(null);
+        setVerificationApprovedAt(null);
+      }
+    } catch {}
+  }, []);
+
+  const handleApprove = useCallback(async () => {
+    setApproving(true);
+    try {
+      const res = await fetch("/api/approval/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      if (res.ok) await fetchVerification(selectedMonth);
+    } catch {}
+    setApproving(false);
+  }, [selectedMonth, fetchVerification]);
+
+  const handleRevoke = useCallback(async () => {
+    setRevoking(true);
+    try {
+      const res = await fetch("/api/approval/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      if (res.ok) await fetchVerification(selectedMonth);
+    } catch {}
+    setRevoking(false);
+  }, [selectedMonth, fetchVerification]);
+
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/commissions/rep/${repId}?month=${selectedMonth}`);
@@ -232,7 +281,7 @@ export default function RepDashboard() {
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }, [repId, selectedMonth]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); fetchVerification(selectedMonth); }, [fetchData, fetchVerification, selectedMonth]);
   useEffect(() => { const i = setInterval(fetchData, 120000); return () => clearInterval(i); }, [fetchData]);
   useEffect(() => {
     setAnim(false);
@@ -312,6 +361,71 @@ export default function RepDashboard() {
             )}
           </div>
         </div>
+
+        {/* ─── Verification Banner ──────────────────────────────── */}
+        {verificationActive && isAE && verificationApproved === false && (
+          <div style={{
+            background: `${B.primary}08`, border: `1px solid ${B.primary}20`,
+            borderRadius: 16, padding: "16px 20px", marginTop: 8, ...an("0.02s"),
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: B.text, fontFamily: F.body, marginBottom: 4 }}>
+              Please review and approve your deals for {monthLabel}
+            </div>
+            <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, lineHeight: 1.5 }}>
+              Check your deal list below, then approve when everything looks correct.
+            </div>
+            <button
+              onClick={handleApprove}
+              disabled={approving}
+              style={{
+                marginTop: 12, padding: "10px 24px", borderRadius: 10,
+                border: "none",
+                background: `linear-gradient(135deg, ${B.accent}, ${B.accentDark})`,
+                color: "#fff", cursor: approving ? "not-allowed" : "pointer",
+                fontSize: 13, fontWeight: 700, fontFamily: F.body,
+                opacity: approving ? 0.6 : 1,
+                boxShadow: `0 2px 12px ${B.accent}30`,
+                transition: "all 0.2s",
+              }}
+            >
+              {approving ? "Submitting…" : "Approve My Deals"}
+            </button>
+          </div>
+        )}
+
+        {verificationActive && isAE && verificationApproved === true && (
+          <div style={{
+            background: `${B.accent}08`, border: `1px solid ${B.accent}20`,
+            borderRadius: 16, padding: "16px 20px", marginTop: 8,
+            display: "flex", alignItems: "center", justifyContent: "space-between", ...an("0.02s"),
+          }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: B.accent, fontFamily: F.body, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: B.accent, display: "inline-block" }} />
+                Deals Approved
+              </div>
+              {verificationApprovedAt && (
+                <div style={{ fontSize: 11, color: B.muted, fontFamily: F.body, marginTop: 2 }}>
+                  Approved {new Date(verificationApprovedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleRevoke}
+              disabled={revoking}
+              style={{
+                padding: "6px 14px", borderRadius: 8,
+                border: `1px solid ${B.border}`,
+                background: B.card, color: B.muted,
+                cursor: revoking ? "not-allowed" : "pointer",
+                fontSize: 11, fontWeight: 500, fontFamily: F.body,
+                opacity: revoking ? 0.5 : 1,
+              }}
+            >
+              {revoking ? "Revoking…" : "Revoke"}
+            </button>
+          </div>
+        )}
 
         {/* ─── Hero card ──────────────────────────────────────────── */}
         <div style={{ background: B.card, borderRadius: 24, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.04), 0 8px 32px rgba(0,0,0,.03)", padding: "32px 28px 36px", marginTop: 8, ...an("0.05s") }}>
