@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import {
   AE_DATA, BDR_DATA,
   getMonthRange, parseMonthParam, getAvailableMonths,
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
-import { authOptions } from "@/lib/auth";
+import { getAppSession } from "@/lib/auth";
 import { getUserRole, isExec } from "@/lib/roles";
 
 export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getAppSession();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

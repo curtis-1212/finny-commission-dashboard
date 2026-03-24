@@ -1,5 +1,8 @@
-import { NextAuthOptions } from "next-auth";
+import { NextAuthOptions, Session } from "next-auth";
+import { getServerSession } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+
+const isDev = process.env.NODE_ENV !== "production";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -10,7 +13,6 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      // Only allow @finny.com emails
       return user.email?.endsWith("@finny.com") ?? false;
     },
     async session({ session }) {
@@ -22,3 +24,13 @@ export const authOptions: NextAuthOptions = {
     error: "/login",
   },
 };
+
+const DEV_SESSION: Session = {
+  user: { email: "dev@finny.com", name: "Dev Admin" },
+  expires: "2099-01-01T00:00:00.000Z",
+};
+
+export async function getAppSession(): Promise<Session | null> {
+  if (isDev) return DEV_SESSION;
+  return getServerSession(authOptions);
+}
