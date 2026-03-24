@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { getUserRole } from "@/lib/roles";
+import { getUserRole, isExec } from "@/lib/roles";
 
 export async function middleware(request: NextRequest) {
   // Dev-only: bypass auth for Playwright screenshot tests
