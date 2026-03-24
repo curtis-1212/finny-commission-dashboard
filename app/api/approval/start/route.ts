@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getAppSession } from "@/lib/auth";
 import { getUserRole, isExec } from "@/lib/roles";
 import { startVerificationCycle } from "@/lib/approval";
 import { getActiveAEs, getMonthRange, parseMonthParam } from "@/lib/commission-config";
@@ -15,7 +14,7 @@ export async function POST(request: NextRequest) {
   let startedBy = "cron";
 
   if (!isCron) {
-    const session = await getServerSession(authOptions);
+    const session = await getAppSession();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

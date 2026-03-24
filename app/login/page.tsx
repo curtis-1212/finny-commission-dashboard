@@ -1,10 +1,18 @@
 "use client";
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      router.replace("/");
+    }
+  }, [router]);
 
   async function handleGoogleSignIn() {
     setLoading(true);
@@ -15,6 +23,10 @@ export default function LoginPage() {
       setError("Failed to sign in. Please try again.");
       setLoading(false);
     }
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return null;
   }
 
   return (

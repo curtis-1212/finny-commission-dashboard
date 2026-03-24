@@ -3,8 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { getUserRole, isExec } from "@/lib/roles";
 
 export async function middleware(request: NextRequest) {
-  // Dev-only: bypass auth for Playwright screenshot tests
-  if (process.env.NODE_ENV !== "production" && request.headers.get("x-screenshot-mode") === "true") {
+  if (process.env.NODE_ENV !== "production") {
     return NextResponse.next();
   }
 

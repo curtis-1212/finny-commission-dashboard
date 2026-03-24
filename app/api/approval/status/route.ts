@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getAppSession } from "@/lib/auth";
 import { getUserRole, isExec } from "@/lib/roles";
 import { getVerificationCycle, getAllApprovalStates } from "@/lib/approval";
 import { parseMonthParam } from "@/lib/commission-config";
@@ -8,7 +7,7 @@ import { parseMonthParam } from "@/lib/commission-config";
 export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getAppSession();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

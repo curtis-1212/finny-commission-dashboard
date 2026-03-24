@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import {
   AE_DATA, BDR_DATA, calcAECommission, calcBDRCommission,
   getMonthRange, parseMonthParam, getAvailableMonths,
@@ -7,7 +6,7 @@ import {
 } from "@/lib/commission-config";
 import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, getDealPersonIds, type DealDetail } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
-import { authOptions } from "@/lib/auth";
+import { getAppSession } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
 
 export const revalidate = 0;
@@ -25,7 +24,7 @@ export async function GET(
   const repId = params.rep;
   const monthParam = request.nextUrl.searchParams.get("month");
 
-  const session = await getServerSession(authOptions);
+  const session = await getAppSession();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

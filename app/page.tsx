@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getAppSession } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
 import ExecDashboard from "./exec-dashboard";
 
 export default async function HomePage() {
-  const session = await getServerSession(authOptions);
+  const session = await getAppSession();
 
   if (!session?.user?.email) redirect("/login");
 
