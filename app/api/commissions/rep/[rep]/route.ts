@@ -4,7 +4,7 @@ import {
   getMonthRange, parseMonthParam, getAvailableMonths,
   buildOwnerMap, getActiveAEs,
 } from "@/lib/commission-config";
-import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, getDealPersonIds, type DealDetail } from "@/lib/deals";
+import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, getDealPersonIds, getScheduledOnboardingDate, getDealStage, type DealDetail } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
 import { getAppSession } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
@@ -212,6 +212,44 @@ export async function GET(
     const netARR = grossARR - optOutARR;
     const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
 
+    // ─── Forecast segments (current month only) ──────────────────────────
+    const nowUtc = new Date();
+    const currentMonthValue = `${nowUtc.getUTCFullYear()}-${String(nowUtc.getUTCMonth() + 1).padStart(2, "0")}`;
+    const isCurrentMonth = selectedMonth === currentMonthValue;
+    let forecast: { closedWonARR: number; scheduledToCloseARR: number; opportunitiesARR: number; quota: number } | undefined;
+
+    if (isCurrentMonth) {
+      const todayISO = nowUtc.toISOString().split("T")[0];
+      let scheduledToCloseARR = 0;
+      let opportunitiesARR = 0;
+
+      // TBO deals: split into scheduled-to-close vs opportunities
+      for (const deal of toBeOnboardedAll) {
+        if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
+        const schedDate = getScheduledOnboardingDate(deal);
+        const value = getVal(deal, "value") || 0;
+
+        if (schedDate && schedDate >= todayISO && schedDate <= endISO) {
+          scheduledToCloseARR += value;
+        } else {
+          // No date, date in the past, or date after this month
+          opportunitiesARR += value;
+        }
+      }
+
+      // Demo held but not progressed to TBO/CW/CL
+      const excludedStages = new Set(["Closed Won", "To Be Onboarded", "Closed Lost"]);
+      for (const deal of allDeals) {
+        if (OWNER_MAP[getVal(deal, "owner")] !== repId) continue;
+        const stage = getDealStage(deal);
+        if (stage && excludedStages.has(stage)) continue;
+        if (!getDemoHeldDate(deal)) continue;
+        opportunitiesARR += getVal(deal, "value") || 0;
+      }
+
+      forecast = { closedWonARR: netARR, scheduledToCloseARR, opportunitiesARR, quota: ae.monthlyQuota };
+    }
+
     // Leaderboard uses opt-out data (not churn)
     const leaderboard = activeAEs.map((lbAe) => {
       let lbGross = 0;
@@ -240,6 +278,7 @@ export async function GET(
         dealCount: closedWonCount, excludedCount: churnedCount,
         closedWonDeals: closedWonDealDetails,
         optOutDeals: optOutDealDetails,
+        forecast,
       },
       leaderboard,
       meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
