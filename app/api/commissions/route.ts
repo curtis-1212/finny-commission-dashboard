@@ -6,7 +6,7 @@ import {
 } from "@/lib/commission-config";
 import { fetchMonthData } from "@/lib/deals";
 import { authOptions } from "@/lib/auth";
-import { getUserRole } from "@/lib/roles";
+import { getUserRole, isExec } from "@/lib/roles";
 
 export const revalidate = 0;  // always fresh -- churn data must reflect opt-out window
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const role = getUserRole(session.user.email);
-  if (!role || role.type !== "exec") {
+  if (!role || !isExec(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

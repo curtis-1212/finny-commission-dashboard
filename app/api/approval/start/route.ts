@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getUserRole } from "@/lib/roles";
+import { getUserRole, isExec } from "@/lib/roles";
 import { startVerificationCycle } from "@/lib/approval";
 import { getActiveAEs, getMonthRange, parseMonthParam } from "@/lib/commission-config";
 import { sendSlackBlocks } from "@/lib/slack";
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const role = getUserRole(session.user.email);
-    if (!role || role.type !== "exec") {
+    if (!role || !isExec(role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     startedBy = session.user.email;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getUserRole } from "@/lib/roles";
+import { getUserRole, isRep } from "@/lib/roles";
 import { getVerificationCycle, revokeApproval } from "@/lib/approval";
 import { AE_DATA, getActiveAEs, parseMonthParam } from "@/lib/commission-config";
 
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const role = getUserRole(session.user.email);
-  if (!role || role.type !== "rep") {
+  if (!role || !isRep(role)) {
     return NextResponse.json({ error: "Only reps can revoke" }, { status: 403 });
   }
 

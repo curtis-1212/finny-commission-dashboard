@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getUserRole } from "@/lib/roles";
+import { getUserRole, isExec } from "@/lib/roles";
 import { getVerificationCycle, getAllApprovalStates } from "@/lib/approval";
 import { parseMonthParam } from "@/lib/commission-config";
 
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const allStates = await getAllApprovalStates(selectedMonth);
 
     // Reps only see their own entry
-    const approvals = role.type === "rep"
+    const approvals = (role.type === "rep")
       ? allStates.filter((s) => s.repId === role.repId)
       : allStates;
 
