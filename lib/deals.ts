@@ -22,6 +22,7 @@ const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_peopl
 
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
 const DEMO_SCHEDULED_DATE_ATTR = process.env.ATTIO_DEMO_SCHEDULED_DATE_ATTR || "demo_scheduled_date";
+const SCHEDULED_ONBOARDING_DATE_ATTR = process.env.ATTIO_SCHEDULED_ONBOARDING_DATE_ATTR || "scheduled_onboarding_date";
 
 const PAGE_SIZE = 500;
 
@@ -81,7 +82,13 @@ export function getDemoScheduledDate(deal: any): string | null {
   return String(d).slice(0, 10);
 }
 
-function getDealStage(deal: any): string | null {
+export function getScheduledOnboardingDate(deal: any): string | null {
+  const d = getVal(deal, SCHEDULED_ONBOARDING_DATE_ATTR);
+  if (!d) return null;
+  return String(d).slice(0, 10);
+}
+
+export function getDealStage(deal: any): string | null {
   const s = getVal(deal, "stage");
   if (!s) return null;
   if (typeof s === "object") {

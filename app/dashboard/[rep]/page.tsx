@@ -19,6 +19,12 @@ interface AEMetrics {
   tboRate?: number | null;
   closedWonDeals?: DealDetail[];
   optOutDeals?: DealDetail[];
+  forecast?: {
+    closedWonARR: number;
+    scheduledToCloseARR: number;
+    opportunitiesARR: number;
+    quota: number;
+  };
 }
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
@@ -198,6 +204,104 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ForecastBar ────────────────────────────────────────────────────────────
+function ForecastBar({ forecast, anim }: {
+  forecast: { closedWonARR: number; scheduledToCloseARR: number; opportunitiesARR: number; quota: number };
+  anim: boolean;
+}) {
+  const { closedWonARR, scheduledToCloseARR, opportunitiesARR, quota } = forecast;
+  const pct = (v: number) => Math.max(0, (v / quota) * 100);
+  const cwPct = pct(closedWonARR);
+  const schedPct = pct(scheduledToCloseARR);
+  const oppPct = pct(opportunitiesARR);
+
+  const barH = 14;
+  const an = (d: string) => ({ opacity: anim ? 1 : 0, transform: anim ? "translateY(0)" : "translateY(16px)", transition: `all 0.8s cubic-bezier(0.16,1,0.3,1) ${d}` });
+
+  return (
+    <div style={{
+      background: B.card, borderRadius: 20, border: `1px solid ${B.border}`,
+      boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)",
+      padding: "20px 22px 18px", marginTop: 12, ...an("0.18s"),
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 14 }}>
+        Monthly Forecast
+      </div>
+
+      {/* Bar track */}
+      <div style={{ position: "relative", height: barH, borderRadius: 100, background: B.borderLight, overflow: "visible" }}>
+        {/* Segment 1: Closed Won (solid) */}
+        <div style={{
+          position: "absolute", left: 0, top: 0, height: barH, borderRadius: 100,
+          background: B.primary,
+          width: anim ? `${cwPct}%` : "0%",
+          transition: "width 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.4s",
+          zIndex: 3, minWidth: cwPct > 0 ? 4 : 0,
+        }} />
+        {/* Segment 2: Scheduled to Close (striped) */}
+        {scheduledToCloseARR > 0 && (
+          <div style={{
+            position: "absolute", top: 0, height: barH,
+            borderRadius: cwPct <= 0 ? 100 : "0 100px 100px 0",
+            left: anim ? `${Math.min(cwPct, 100)}%` : "0%",
+            width: anim ? `${schedPct}%` : "0%",
+            background: `repeating-linear-gradient(45deg, ${B.primary}50, ${B.primary}50 3px, ${B.primary}20 3px, ${B.primary}20 6px)`,
+            transition: "width 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.6s, left 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.4s",
+            zIndex: 2, minWidth: scheduledToCloseARR > 0 ? 4 : 0,
+          }} />
+        )}
+        {/* Segment 3: Opportunities (dashed outline) */}
+        {opportunitiesARR > 0 && (
+          <div style={{
+            position: "absolute", top: 0, height: barH - 3,
+            borderRadius: (cwPct + schedPct) <= 0 ? 100 : "0 100px 100px 0",
+            left: anim ? `${Math.min(cwPct + schedPct, 100)}%` : "0%",
+            width: anim ? `${oppPct}%` : "0%",
+            background: "transparent",
+            border: `1.5px dashed ${B.primary}35`,
+            transition: "width 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.8s, left 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.4s",
+            zIndex: 1,
+          }} />
+        )}
+        {/* Quota marker at 100% */}
+        {(cwPct + schedPct + oppPct) > 0 && (
+          <div style={{
+            position: "absolute", right: 0, top: -3, width: 1.5, height: barH + 6,
+            background: B.muted, opacity: 0.3, borderRadius: 1,
+          }} />
+        )}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "10px 18px", marginTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 3, background: B.primary }} />
+          <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Closed Won</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(closedWonARR)}</span>
+        </div>
+        {scheduledToCloseARR > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: `repeating-linear-gradient(45deg, ${B.primary}50, ${B.primary}50 2px, ${B.primary}20 2px, ${B.primary}20 4px)` }} />
+            <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Scheduled</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(scheduledToCloseARR)}</span>
+          </div>
+        )}
+        {opportunitiesARR > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: "transparent", border: `1.5px dashed ${B.primary}35` }} />
+            <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Opportunities</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(opportunitiesARR)}</span>
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          <span style={{ fontSize: 11, color: B.faint, fontFamily: F.body }}>Quota</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.mono }}>{fmt(quota)}</span>
         </div>
       </div>
     </div>
@@ -491,6 +595,11 @@ export default function RepDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ─── Forecast Bar (current month, AE only) ────────────── */}
+        {isAE && isCur && aeM.forecast && (
+          <ForecastBar forecast={aeM.forecast} anim={anim} />
+        )}
 
         {/* ─── Commission ─────────────────────────────────────────── */}
         <div style={{
