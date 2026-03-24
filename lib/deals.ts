@@ -21,6 +21,7 @@ const USERS_PERSON_ATTR = process.env.ATTIO_USERS_PERSON_ATTR ?? "person";
 const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_people";
 
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
+const DEMO_SCHEDULED_DATE_ATTR = process.env.ATTIO_DEMO_SCHEDULED_DATE_ATTR || "demo_scheduled_date";
 
 const PAGE_SIZE = 500;
 
@@ -70,6 +71,12 @@ function getDealDate(deal: any): string | null {
 
 export function getDemoHeldDate(deal: any): string | null {
   const d = getVal(deal, DEMO_HELD_DATE_ATTR);
+  if (!d) return null;
+  return String(d).slice(0, 10);
+}
+
+export function getDemoScheduledDate(deal: any): string | null {
+  const d = getVal(deal, DEMO_SCHEDULED_DATE_ATTR);
   if (!d) return null;
   return String(d).slice(0, 10);
 }
@@ -406,6 +413,192 @@ export async function fetchAllDeals(filter: object): Promise<any[]> {
   return allDeals;
 }
 
+// ─── Forecast Types & Computation ───────────────────────────────────────────
+
+export interface AEForecast {
+  scheduledDemos: number;
+  trailing60DayCwRate: number | null;
+  avgFunnelDays: number | null;
+  avgDealSize: number;
+  projectedARR: { low: number; mid: number; high: number };
+}
+
+export interface ForecastData {
+  perAE: Record<string, AEForecast>;
+  team: {
+    totalScheduledDemos: number;
+    blendedCwRate: number | null;
+    avgFunnelDays: number | null;
+    projectedARR: { low: number; mid: number; high: number };
+    totalQuota: number;
+  };
+}
+
+/**
+ * Compute month-end forecast based on:
+ * 1. Scheduled demos remaining this month (demo_scheduled_date > today && <= monthEnd)
+ * 2. Trailing 60-day close rate (demo_held → closed_won)
+ * 3. Average time-in-funnel days (demo_held → close_date for recent CW deals)
+ * 4. Average deal size from recent CW deals
+ */
+function computeForecast(
+  allDeals: any[],
+  closedWonDeals: any[],
+  activeAEs: AEConfig[],
+  ownerMap: Record<string, string>,
+  cwPersonIds: Set<string>,
+  monthEndISO: string,
+): ForecastData {
+  const todayISO = new Date().toISOString().split("T")[0];
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+    .toISOString().split("T")[0];
+
+  // 1. Scheduled demos per AE: deals with demo_scheduled_date between today and month-end
+  const scheduledByAE: Record<string, number> = {};
+  for (const ae of activeAEs) scheduledByAE[ae.id] = 0;
+
+  for (const deal of allDeals) {
+    const schedDate = getDemoScheduledDate(deal);
+    if (!schedDate || schedDate <= todayISO || schedDate > monthEndISO) continue;
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (aeId && scheduledByAE[aeId] !== undefined) {
+      scheduledByAE[aeId]++;
+    }
+  }
+
+  // 2. Trailing 60-day CW rate per AE: of demos held in last 60 days, what % converted?
+  const demoPeopleByAE: Record<string, Set<string>> = {};
+  for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
+
+  for (const deal of allDeals) {
+    const demoDate = getDemoHeldDate(deal);
+    if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (aeId && demoPeopleByAE[aeId]) {
+      for (const pid of getDealPersonIds(deal)) {
+        demoPeopleByAE[aeId].add(pid);
+      }
+    }
+  }
+
+  const cwRateByAE: Record<string, number | null> = {};
+  for (const ae of activeAEs) {
+    const people = demoPeopleByAE[ae.id];
+    if (people.size === 0) { cwRateByAE[ae.id] = null; continue; }
+    let converted = 0;
+    for (const pid of Array.from(people)) {
+      if (cwPersonIds.has(pid)) converted++;
+    }
+    cwRateByAE[ae.id] = converted / people.size;
+  }
+
+  // 3. Avg funnel days & avg deal size per AE: from CW deals closed in last 60 days
+  const funnelDaysByAE: Record<string, number[]> = {};
+  const dealSizesByAE: Record<string, number[]> = {};
+  for (const ae of activeAEs) {
+    funnelDaysByAE[ae.id] = [];
+    dealSizesByAE[ae.id] = [];
+  }
+
+  for (const deal of closedWonDeals) {
+    const closeDate = getVal(deal, "close_date");
+    if (!closeDate) continue;
+    const closeDateStr = String(closeDate).slice(0, 10);
+    if (closeDateStr < sixtyDaysAgo) continue;
+
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (!aeId || !funnelDaysByAE[aeId]) continue;
+
+    const value = getVal(deal, "value") || 0;
+    dealSizesByAE[aeId].push(value);
+
+    const demoDate = getDemoHeldDate(deal);
+    if (demoDate) {
+      const days = Math.round(
+        (new Date(closeDateStr).getTime() - new Date(demoDate).getTime()) /
+        (1000 * 60 * 60 * 24)
+      );
+      if (days >= 0) funnelDaysByAE[aeId].push(days);
+    }
+  }
+
+  const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  // Team-level fallbacks
+  const allDealSizes = Object.values(dealSizesByAE).flat();
+  const teamAvgDealSize = avg(allDealSizes);
+  const allFunnelDays = Object.values(funnelDaysByAE).flat();
+  const teamAvgFunnelDays = allFunnelDays.length > 0 ? avg(allFunnelDays) : null;
+
+  // Blended team CW rate
+  let totalDemoPeople = 0, totalConverted = 0;
+  for (const ae of activeAEs) {
+    const people = demoPeopleByAE[ae.id];
+    totalDemoPeople += people.size;
+    for (const pid of Array.from(people)) {
+      if (cwPersonIds.has(pid)) totalConverted++;
+    }
+  }
+  const blendedCwRate = totalDemoPeople > 0 ? totalConverted / totalDemoPeople : null;
+
+  // Build per-AE forecast
+  const perAE: Record<string, AEForecast> = {};
+  let teamScheduledDemos = 0;
+  let teamProjectedLow = 0, teamProjectedMid = 0, teamProjectedHigh = 0;
+  let teamTotalQuota = 0;
+
+  for (const ae of activeAEs) {
+    const scheduled = scheduledByAE[ae.id];
+    const cwRate = cwRateByAE[ae.id];
+    const aeAvgDealSize = dealSizesByAE[ae.id].length > 0
+      ? avg(dealSizesByAE[ae.id])
+      : teamAvgDealSize;
+    const aeAvgFunnelDays = funnelDaysByAE[ae.id].length > 0
+      ? Math.round(avg(funnelDaysByAE[ae.id]))
+      : teamAvgFunnelDays;
+
+    // Use the AE's own rate, or fall back to team blended rate
+    const effectiveRate = cwRate ?? blendedCwRate ?? 0;
+
+    const additionalLow = scheduled * effectiveRate * 0.7 * aeAvgDealSize;
+    const additionalMid = scheduled * effectiveRate * aeAvgDealSize;
+    const additionalHigh = scheduled * effectiveRate * 1.2 * aeAvgDealSize;
+
+    perAE[ae.id] = {
+      scheduledDemos: scheduled,
+      trailing60DayCwRate: cwRate,
+      avgFunnelDays: aeAvgFunnelDays,
+      avgDealSize: Math.round(aeAvgDealSize),
+      projectedARR: {
+        low: Math.round(additionalLow),
+        mid: Math.round(additionalMid),
+        high: Math.round(additionalHigh),
+      },
+    };
+
+    teamScheduledDemos += scheduled;
+    teamProjectedLow += additionalLow;
+    teamProjectedMid += additionalMid;
+    teamProjectedHigh += additionalHigh;
+    teamTotalQuota += ae.monthlyQuota;
+  }
+
+  return {
+    perAE,
+    team: {
+      totalScheduledDemos: teamScheduledDemos,
+      blendedCwRate,
+      avgFunnelDays: teamAvgFunnelDays != null ? Math.round(teamAvgFunnelDays) : null,
+      projectedARR: {
+        low: Math.round(teamProjectedLow),
+        mid: Math.round(teamProjectedMid),
+        high: Math.round(teamProjectedHigh),
+      },
+      totalQuota: teamTotalQuota,
+    },
+  };
+}
+
 // ─── Main data-fetching function ────────────────────────────────────────────
 
 export interface MonthData {
@@ -432,6 +625,7 @@ export interface MonthData {
     totalMeetings: number; netMeetings: number;
     attainment: number; commission: number;
   };
+  forecast: ForecastData | null;
   meta: {
     fetchedAt: string; dealCount: number; monthLabel: string;
     selectedMonth: string; warning?: string;
@@ -682,9 +876,22 @@ export async function fetchMonthData(
     ? "No Closed Won deals found for this month -- check Attio data"
     : undefined;
 
+  // ─── Forecast (current month only) ─────────────────────────────────────
+  const currentMonth = (() => {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  })();
+  let forecast: ForecastData | null = null;
+  if (selectedMonthStr === currentMonth) {
+    forecast = computeForecast(
+      allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
+    );
+  }
+
   return {
     aeResults,
     bdrResult,
+    forecast,
     meta: {
       fetchedAt: new Date().toISOString(),
       dealCount: totalDeals,
