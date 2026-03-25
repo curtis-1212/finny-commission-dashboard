@@ -96,15 +96,15 @@ function PRow({ icon, label, count, arr, hl, neg }: {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", borderBottom: `1px solid ${B.borderLight}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: neg ? "#FEF2F2" : hl ? B.primaryFaint : "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{icon}</div>
-        <span style={{ fontSize: 14, fontFamily: F.body, color: B.text, fontWeight: 500 }}>{label}</span>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: neg ? "#FEF2F2" : hl ? B.primaryFaint : "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{icon}</div>
+        <span style={{ fontSize: 15, fontFamily: F.body, color: B.text, fontWeight: 500 }}>{label}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {arr !== undefined && arr > 0 && (
-          <span style={{ fontSize: 12, fontFamily: F.mono, fontWeight: 500, color: neg ? B.danger : B.faint }}>{neg ? "-" : ""}{fmt(arr)}</span>
+          <span style={{ fontSize: 13, fontFamily: F.mono, fontWeight: 500, color: neg ? B.danger : B.faint }}>{neg ? "-" : ""}{fmt(arr)}</span>
         )}
         <span style={{
-          fontSize: 15, fontFamily: F.mono, fontWeight: 700,
+          fontSize: 16, fontFamily: F.mono, fontWeight: 700,
           color: neg && count > 0 ? B.danger : hl ? B.primary : B.text,
           background: neg && count > 0 ? "#FEF2F2" : hl ? B.primaryFaint : "#F1F5F9",
           padding: "3px 12px", borderRadius: 8, minWidth: 36, textAlign: "center" as const,
@@ -133,23 +133,23 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
       }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 22px 14px", borderBottom: `1px solid ${B.borderLight}` }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.02em" }}>Deal Breakdown</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: B.faint, padding: 4, lineHeight: 1 }}>×</button>
+          <div style={{ fontSize: 16, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.02em" }}>Deal Breakdown</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 19, color: B.faint, padding: 4, lineHeight: 1 }}>×</button>
         </div>
         {/* Body */}
         <div style={{ overflow: "auto", padding: "16px 22px 22px", display: "flex", flexDirection: "column" as const, gap: 20 }}>
           {/* Closed Won */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
               Closed Won — Counting Towards Quota
             </div>
             {closedWonDeals.length === 0 ? (
-              <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No closed won deals this month</div>
+              <div style={{ fontSize: 14, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No closed won deals this month</div>
             ) : (
               closedWonDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < closedWonDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                    <div style={{ fontSize: 15, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {d.recordId ? (
                         <a href={`https://app.attio.com/finnyai-com/objects/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
@@ -159,30 +159,30 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
                         >{d.name}</a>
                       ) : d.name}
                     </div>
-                    <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
+                    <div style={{ fontSize: 12, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: B.primary, fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>{fmtD(d.value)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: B.primary, fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>{fmtD(d.value)}</div>
                 </div>
               ))
             )}
             {closedWonDeals.length > 0 && (
               <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${B.border}`, marginTop: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: B.primary, fontFamily: F.mono }}>{fmtD(closedWonDeals.reduce((s, d) => s + d.value, 0))}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: B.primary, fontFamily: F.mono }}>{fmtD(closedWonDeals.reduce((s, d) => s + d.value, 0))}</span>
               </div>
             )}
           </div>
           {/* Opt-Outs */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: B.muted, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 10 }}>
               Prior Month Opt-Outs — Netting Against Quota
             </div>
             {optOutDeals.length === 0 ? (
-              <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No opt-out deals this month</div>
+              <div style={{ fontSize: 14, color: B.faint, fontFamily: F.body, padding: "8px 0" }}>No opt-out deals this month</div>
             ) : (
               optOutDeals.map((d, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < optOutDeals.length - 1 ? `1px solid ${B.borderLight}` : "none" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                    <div style={{ fontSize: 15, fontWeight: 500, color: B.text, fontFamily: F.body, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                       {d.recordId ? (
                         <a href={`https://app.attio.com/finnyai-com/objects/deals/${d.recordId}`} target="_blank" rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
@@ -192,15 +192,15 @@ function DealListModal({ closedWonDeals, optOutDeals, onClose }: {
                         >{d.name}</a>
                       ) : d.name}
                     </div>
-                    <div style={{ fontSize: 11, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
+                    <div style={{ fontSize: 12, color: B.faint, fontFamily: F.mono, marginTop: 2 }}>{d.closeDate}</div>
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#EF4444", fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>-{fmtD(d.value)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#EF4444", fontFamily: F.mono, marginLeft: 12, flexShrink: 0 }}>-{fmtD(d.value)}</div>
                 </div>
               ))
             )}
             {optOutDeals.length > 0 && (
               <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${B.border}`, marginTop: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#EF4444", fontFamily: F.mono }}>-{fmtD(optOutDeals.reduce((s, d) => s + d.value, 0))}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#EF4444", fontFamily: F.mono }}>-{fmtD(optOutDeals.reduce((s, d) => s + d.value, 0))}</span>
               </div>
             )}
           </div>
@@ -230,7 +230,7 @@ function ForecastBar({ forecast, anim }: {
       boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)",
       padding: "20px 22px 18px", marginTop: 12, ...an("0.18s"),
     }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 14 }}>
         Monthly Forecast
       </div>
 
@@ -282,26 +282,26 @@ function ForecastBar({ forecast, anim }: {
       <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "10px 18px", marginTop: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 10, height: 10, borderRadius: 3, background: B.primary }} />
-          <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Closed Won</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(closedWonARR)}</span>
+          <span style={{ fontSize: 12, color: B.muted, fontFamily: F.body }}>Closed Won</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(closedWonARR)}</span>
         </div>
         {scheduledToCloseARR > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: 3, background: `repeating-linear-gradient(45deg, ${B.primary}50, ${B.primary}50 2px, ${B.primary}20 2px, ${B.primary}20 4px)` }} />
-            <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Scheduled</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(scheduledToCloseARR)}</span>
+            <span style={{ fontSize: 12, color: B.muted, fontFamily: F.body }}>Scheduled</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(scheduledToCloseARR)}</span>
           </div>
         )}
         {opportunitiesARR > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: 3, background: "transparent", border: `1.5px dashed ${B.primary}35` }} />
-            <span style={{ fontSize: 11, color: B.muted, fontFamily: F.body }}>Opportunities</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(opportunitiesARR)}</span>
+            <span style={{ fontSize: 12, color: B.muted, fontFamily: F.body }}>Opportunities</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: B.text, fontFamily: F.mono }}>{fmt(opportunitiesARR)}</span>
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-          <span style={{ fontSize: 11, color: B.faint, fontFamily: F.body }}>Quota</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.mono }}>{fmt(quota)}</span>
+          <span style={{ fontSize: 12, color: B.faint, fontFamily: F.body }}>Quota</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: B.faint, fontFamily: F.mono }}>{fmt(quota)}</span>
         </div>
       </div>
     </div>
@@ -396,7 +396,7 @@ export default function RepDashboard() {
     <div style={{ minHeight: "100vh", background: B.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" as const, gap: 16 }}>
       <style>{KF}</style>
       <img src="/logo.png" alt="FINNY" style={{ width: 36, height: 36, borderRadius: 8, opacity: 0.7, animation: "breathe 2s ease-in-out infinite" }} />
-      <div style={{ fontSize: 13, color: B.faint, fontFamily: F.body }}>Loading your dashboard...</div>
+      <div style={{ fontSize: 14, color: B.faint, fontFamily: F.body }}>Loading your dashboard...</div>
     </div>
   );
 
@@ -405,10 +405,10 @@ export default function RepDashboard() {
       <style>{KF}</style>
       <div style={{ textAlign: "center", maxWidth: 340 }}>
         <img src="/logo.png" alt="FINNY" style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 24, opacity: 0.5 }} />
-        <div style={{ fontSize: 20, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.03em" }}>
+        <div style={{ fontSize: 21, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.03em" }}>
           {error === "unauthorized" ? "Link expired" : "Something went wrong"}
         </div>
-        <div style={{ fontSize: 14, color: B.muted, marginTop: 10, fontFamily: F.body, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 15, color: B.muted, marginTop: 10, fontFamily: F.body, lineHeight: 1.6 }}>
           {error === "unauthorized" ? "This dashboard link is no longer valid. Reach out for a fresh one." : "Hit a snag loading data. Try refreshing."}
         </div>
       </div>
@@ -451,17 +451,17 @@ export default function RepDashboard() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0 12px", ...an("0s") }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <img src="/logo.png" alt="FINNY" style={{ width: 28, height: 28, borderRadius: 6 }} />
-            <div style={{ fontSize: 11, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Dashboard</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: B.faint, fontFamily: F.body, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Dashboard</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {isCur && <div style={{ width: 6, height: 6, borderRadius: "50%", background: B.accent, animation: "breathe 2.5s ease-in-out infinite" }} />}
             {availableMonths.length > 1 ? (
               <select value={selectedMonth} onChange={(e) => { setSelectedMonth(e.target.value); setLoading(true); }}
-                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${B.border}`, background: B.card, color: B.muted, fontSize: 12, fontFamily: F.body, fontWeight: 500, cursor: "pointer", outline: "none", boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
+                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${B.border}`, background: B.card, color: B.muted, fontSize: 13, fontFamily: F.body, fontWeight: 500, cursor: "pointer", outline: "none", boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
                 {availableMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             ) : (
-              <span style={{ fontSize: 12, fontWeight: 500, color: B.muted, fontFamily: F.body }}>{monthLabel || getMonthName()}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: B.muted, fontFamily: F.body }}>{monthLabel || getMonthName()}</span>
             )}
           </div>
         </div>
@@ -472,10 +472,10 @@ export default function RepDashboard() {
             background: `${B.primary}08`, border: `1px solid ${B.primary}20`,
             borderRadius: 16, padding: "16px 20px", marginTop: 8, ...an("0.02s"),
           }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: B.text, fontFamily: F.body, marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: B.text, fontFamily: F.body, marginBottom: 4 }}>
               Please review and approve your deals for {monthLabel}
             </div>
-            <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 13, color: B.muted, fontFamily: F.body, lineHeight: 1.5 }}>
               Check your deal list below, then approve when everything looks correct.
             </div>
             <button
@@ -486,7 +486,7 @@ export default function RepDashboard() {
                 border: "none",
                 background: `linear-gradient(135deg, ${B.accent}, ${B.accentDark})`,
                 color: "#fff", cursor: approving ? "not-allowed" : "pointer",
-                fontSize: 13, fontWeight: 700, fontFamily: F.body,
+                fontSize: 14, fontWeight: 700, fontFamily: F.body,
                 opacity: approving ? 0.6 : 1,
                 boxShadow: `0 2px 12px ${B.accent}30`,
                 transition: "all 0.2s",
@@ -504,12 +504,12 @@ export default function RepDashboard() {
             display: "flex", alignItems: "center", justifyContent: "space-between", ...an("0.02s"),
           }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: B.accent, fontFamily: F.body, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: B.accent, fontFamily: F.body, display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: B.accent, display: "inline-block" }} />
                 Deals Approved
               </div>
               {verificationApprovedAt && (
-                <div style={{ fontSize: 11, color: B.muted, fontFamily: F.body, marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, marginTop: 2 }}>
                   Approved {new Date(verificationApprovedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </div>
               )}
@@ -522,7 +522,7 @@ export default function RepDashboard() {
                 border: `1px solid ${B.border}`,
                 background: B.card, color: B.muted,
                 cursor: revoking ? "not-allowed" : "pointer",
-                fontSize: 11, fontWeight: 500, fontFamily: F.body,
+                fontSize: 12, fontWeight: 500, fontFamily: F.body,
                 opacity: revoking ? 0.5 : 1,
               }}
             >
@@ -534,11 +534,11 @@ export default function RepDashboard() {
         {/* ─── Hero card ──────────────────────────────────────────── */}
         <div style={{ background: B.card, borderRadius: 24, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.04), 0 8px 32px rgba(0,0,0,.03)", padding: "32px 28px 36px", marginTop: 8, ...an("0.05s") }}>
           {/* Greeting */}
-          <div style={{ fontSize: 14, color: B.faint, fontFamily: F.body }}>{isCur ? `Hey ${name1}` : name1}</div>
-          <h1 style={{ fontSize: 30, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.035em", lineHeight: 1.1, margin: "6px 0 0" }}>
+          <div style={{ fontSize: 15, color: B.faint, fontFamily: F.body }}>{isCur ? `Hey ${name1}` : name1}</div>
+          <h1 style={{ fontSize: 31, fontWeight: 700, color: B.text, fontFamily: F.display, letterSpacing: "-0.035em", lineHeight: 1.1, margin: "6px 0 0" }}>
             {msg.h} {msg.e}
           </h1>
-          <p style={{ fontSize: 14, color: B.muted, fontFamily: F.body, lineHeight: 1.6, margin: "10px 0 0", maxWidth: 340 }}>{msg.s}</p>
+          <p style={{ fontSize: 15, color: B.muted, fontFamily: F.body, lineHeight: 1.6, margin: "10px 0 0", maxWidth: 340 }}>{msg.s}</p>
 
           {/* Ring */}
           <div style={{ display: "flex", justifyContent: "center", padding: "36px 0 28px", ...anS("0.15s") }}>
@@ -559,10 +559,10 @@ export default function RepDashboard() {
                   style={{ transition: "stroke-dashoffset 1.6s cubic-bezier(0.34,1.56,0.64,1)", filter: "blur(10px)" }} />}
               </svg>
               <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-                <div style={{ fontSize: 44, fontWeight: 700, fontFamily: F.display, color: B.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
+                <div style={{ fontSize: 45, fontWeight: 700, fontFamily: F.display, color: B.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
                   {fmtPct(anim ? att : 0)}
                 </div>
-                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, marginTop: 4, fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" as const }}>
+                <div style={{ fontSize: 12, color: B.faint, fontFamily: F.body, marginTop: 4, fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" as const }}>
                   of quota
                 </div>
               </div>
@@ -609,17 +609,17 @@ export default function RepDashboard() {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.65)", fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.65)", fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 6 }}>
                 Commission Earned
               </div>
-              <div style={{ fontSize: 34, fontWeight: 700, fontFamily: F.display, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1 }}>
+              <div style={{ fontSize: 35, fontWeight: 700, fontFamily: F.display, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1 }}>
                 {fmt(comm)}
               </div>
             </div>
             {isAE && (
               <div style={{ textAlign: "right" as const, marginTop: 4 }}>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 4 }}>Gross → Net</div>
-                <div style={{ fontSize: 12, fontFamily: F.mono, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 4 }}>Gross → Net</div>
+                <div style={{ fontSize: 13, fontFamily: F.mono, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
                   {fmt(aeM.grossARR)} <span style={{ color: (aeM.optOut?.arr || 0) > 0 ? "#FCA5A5" : "rgba(255,255,255,0.5)" }}>− {fmt(aeM.optOut?.arr || 0)}</span>
                 </div>
               </div>
@@ -629,8 +629,8 @@ export default function RepDashboard() {
             <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
               {aeM.tierBreakdown.map((t, i) => (
                 <div key={i} style={{ flex: 1, padding: "10px 12px", borderRadius: 12, background: t.amount > 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)", backdropFilter: "blur(8px)" }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 4 }}>{t.label}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.mono, color: t.amount > 0 ? "#fff" : "rgba(255,255,255,0.3)" }}>{fmt(t.amount)}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: F.body, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 4 }}>{t.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: F.mono, color: t.amount > 0 ? "#fff" : "rgba(255,255,255,0.3)" }}>{fmt(t.amount)}</div>
                 </div>
               ))}
             </div>
@@ -640,13 +640,13 @@ export default function RepDashboard() {
         {/* ─── Pipeline ───────────────────────────────────────────── */}
         <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "8px 22px 6px", marginTop: 12, ...an("0.3s") }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 0 6px" }}>
-            <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>
+            <div style={{ fontSize: 12, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>
               {isAE ? "Pipeline Breakdown" : "Activity"}
             </div>
             {isAE && (aeM.closedWon.count > 0 || (aeM.optOut?.count || 0) > 0) && (
               <button onClick={() => setShowDeals(true)} style={{
                 background: B.primaryFaint, border: `1px solid ${B.primary}25`, borderRadius: 8,
-                padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600,
                 color: B.primary, fontFamily: F.body, transition: "all 0.15s",
               }}>View Deals</button>
             )}
@@ -673,24 +673,24 @@ export default function RepDashboard() {
         {/* ─── Close Rates ───────────────────────────────────────── */}
         {isAE && aeM.demoCount != null && aeM.demoCount > 0 && (
           <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "20px 22px", marginTop: 12, ...an("0.34s") }}>
-            <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, marginBottom: 16 }}>
               Close Rates
             </div>
             <div style={{ display: "flex", gap: 12 }}>
               {/* Demos Held */}
               <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: "#F8FAFC", border: `1px solid ${B.borderLight}`, textAlign: "center" as const }}>
-                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demos Held</div>
-                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.text, letterSpacing: "-0.02em" }}>{aeM.demoCount}</div>
+                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demos Held</div>
+                <div style={{ fontSize: 25, fontWeight: 700, fontFamily: F.mono, color: B.text, letterSpacing: "-0.02em" }}>{aeM.demoCount}</div>
               </div>
               {/* Demo → TBO */}
               <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: B.primaryFaint, border: `1px solid ${B.primary}20`, textAlign: "center" as const }}>
-                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → TBO</div>
-                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.primary, letterSpacing: "-0.02em" }}>{aeM.tboRate != null ? fmtPct(aeM.tboRate) : "—"}</div>
+                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → TBO</div>
+                <div style={{ fontSize: 25, fontWeight: 700, fontFamily: F.mono, color: B.primary, letterSpacing: "-0.02em" }}>{aeM.tboRate != null ? fmtPct(aeM.tboRate) : "—"}</div>
               </div>
               {/* Demo → CW */}
               <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: `${B.accent}08`, border: `1px solid ${B.accent}20`, textAlign: "center" as const }}>
-                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → CW</div>
-                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.accentDark, letterSpacing: "-0.02em" }}>{aeM.cwRate != null ? fmtPct(aeM.cwRate) : "—"}</div>
+                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Demo → CW</div>
+                <div style={{ fontSize: 25, fontWeight: 700, fontFamily: F.mono, color: B.accentDark, letterSpacing: "-0.02em" }}>{aeM.cwRate != null ? fmtPct(aeM.cwRate) : "—"}</div>
               </div>
             </div>
           </div>
@@ -714,7 +714,7 @@ export default function RepDashboard() {
                 return <div key={i} style={{ width: 10, height: 10, borderRadius: 3, background: isT ? B.primary : past ? `${B.primary}30` : B.borderLight, boxShadow: isT ? `0 0 8px ${B.primary}50` : "none", transition: "all 0.3s" }} />;
               })}
             </div>
-            <div style={{ fontSize: 14, color: B.muted, fontFamily: F.body, marginTop: 16, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 15, color: B.muted, fontFamily: F.body, marginTop: 16, lineHeight: 1.4 }}>
               <strong style={{ color: B.text, fontWeight: 700 }}>{dLeft}</strong> selling days left in {monthLabel || getMonthName()}
             </div>
           </div>
@@ -724,7 +724,7 @@ export default function RepDashboard() {
         {/* ─── AE Leaderboard ─── */}
         {leaderboard.length > 0 && rep?.type === "ae" && (
           <div style={{ marginTop: 32, padding: "20px 24px", background: B.card, borderRadius: 14, border: `1px solid ${B.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: B.muted, fontFamily: F.display, letterSpacing: "0.04em", marginBottom: 16, textTransform: "uppercase" as const }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: B.muted, fontFamily: F.display, letterSpacing: "0.04em", marginBottom: 16, textTransform: "uppercase" as const }}>
               AE Leaderboard — New ARR
             </div>
             {leaderboard.map((entry, idx) => {
@@ -740,18 +740,18 @@ export default function RepDashboard() {
                     width: 24, height: 24, borderRadius: 6,
                     background: `${entry.color}20`, border: `1px solid ${entry.color}35`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: entry.color, fontFamily: F.display,
+                    fontSize: 11, fontWeight: 700, color: entry.color, fontFamily: F.display,
                   }}>{idx + 1}</div>
                   <div style={{
                     width: 28, height: 28, borderRadius: 7,
                     background: `${entry.color}18`, border: `1px solid ${entry.color}30`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: entry.color, fontFamily: F.display,
+                    fontSize: 11, fontWeight: 700, color: entry.color, fontFamily: F.display,
                   }}>{entry.initials}</div>
-                  <div style={{ flex: 1, fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? B.accent : B.text, fontFamily: F.body }}>
+                  <div style={{ flex: 1, fontSize: 15, fontWeight: isMe ? 700 : 500, color: isMe ? B.accent : B.text, fontFamily: F.body }}>
                     {entry.name}{isMe ? " (You)" : ""}
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: isMe ? B.accent : B.text, fontFamily: F.mono }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: isMe ? B.accent : B.text, fontFamily: F.mono }}>
                     {"$" + Math.round(entry.netARR).toLocaleString("en-US")}
                   </div>
                 </div>
@@ -763,13 +763,13 @@ export default function RepDashboard() {
         {/* ─── Footer ─────────────────────────────────────────────── */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "32px 0 40px", opacity: anim ? 1 : 0, transition: "opacity 0.6s ease 0.6s" }}>
           <img src="/logo.png" alt="" style={{ width: 14, height: 14, borderRadius: 3, opacity: 0.3 }} />
-          <span style={{ fontSize: 11, color: B.faint, fontFamily: F.body }}>Updates every 2 min · Powered by FINNY</span>
+          <span style={{ fontSize: 12, color: B.faint, fontFamily: F.body }}>Updates every 2 min · Powered by FINNY</span>
         </div>
       </div>
     </div>
   );
 }
 
-const SL: React.CSSProperties = { fontSize: 10, color: "#94A3B8", fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 };
-const SV: React.CSSProperties = { fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" };
+const SL: React.CSSProperties = { fontSize: 11, color: "#94A3B8", fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 };
+const SV: React.CSSProperties = { fontSize: 21, fontWeight: 700, color: "#1E293B", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" };
 const KF = `@keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.94); } }`;
