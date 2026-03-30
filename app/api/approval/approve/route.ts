@@ -111,14 +111,28 @@ export async function POST(request: NextRequest) {
 
     const { allComplete } = await submitApproval(selectedMonth, repId, dealSnapshot, netARR, commission);
 
-    // If all AEs approved, notify exec via Slack
+    // Notify exec that this individual AE has verified
+    const allStatesForProgress = await getAllApprovalStates(selectedMonth);
+    const approvedCount = allStatesForProgress.filter((s) => s.record?.approved === true).length;
+    const totalCount = allStatesForProgress.length;
+    const fmt = (n: number) => "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+    await sendSlackBlocks([
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `✅ *${ae.name}* verified their deals for *${monthLabel}*\n💰 Commission to enter in Gusto: *${fmt(commission)}* (Net ARR: ${fmt(netARR)})\n📊 Progress: ${approvedCount} of ${totalCount} AEs complete`,
+        },
+      },
+    ]);
+
+    // If all AEs approved, notify exec via Slack with Gusto-ready summary
     if (allComplete) {
-      const allStates = await getAllApprovalStates(selectedMonth);
-      const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
-      const lines = allStates.map(
+      const lines = allStatesForProgress.map(
         (s) => `• *${s.name}*: ${fmt(s.record?.commission ?? 0)}`
       ).join("\n");
-      const totalComm = allStates.reduce((sum, s) => sum + (s.record?.commission ?? 0), 0);
+      const totalComm = allStatesForProgress.reduce((sum, s) => sum + (s.record?.commission ?? 0), 0);
 
       await sendSlackBlocks([
         { type: "header", text: { type: "plain_text", text: `✅ All Commissions Approved — ${monthLabel}` } },
