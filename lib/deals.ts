@@ -6,6 +6,8 @@ import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
     calcAECommission, calcBDRCommission, BDR_DATA,
 } from "@/lib/commission-config";
+import { fetchScheduledDemosFromCalendly, ScheduledDemoCounts } from "@/lib/calendly";
+import { fetchHeldDemosFromFireflies, HeldDemosByRep } from "@/lib/fireflies";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -21,7 +23,6 @@ const USERS_PERSON_ATTR = process.env.ATTIO_USERS_PERSON_ATTR ?? "person";
 const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_people";
 
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
-const DEMO_SCHEDULED_DATE_ATTR = process.env.ATTIO_DEMO_SCHEDULED_DATE_ATTR || "demo_scheduled_date";
 
 const PAGE_SIZE = 500;
 
@@ -75,11 +76,6 @@ export function getDemoHeldDate(deal: any): string | null {
   return String(d).slice(0, 10);
 }
 
-export function getDemoScheduledDate(deal: any): string | null {
-  const d = getVal(deal, DEMO_SCHEDULED_DATE_ATTR);
-  if (!d) return null;
-  return String(d).slice(0, 10);
-}
 
 function getDealStage(deal: any): string | null {
   const s = getVal(deal, "stage");
@@ -448,35 +444,56 @@ function computeForecast(
   ownerMap: Record<string, string>,
   cwPersonIds: Set<string>,
   monthEndISO: string,
+  scheduledDemoCounts: ScheduledDemoCounts,
+  heldDemosByRep: HeldDemosByRep,
 ): ForecastData {
   const todayISO = new Date().toISOString().split("T")[0];
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     .toISOString().split("T")[0];
 
-  // 1. Scheduled demos per AE: deals with demo_scheduled_date between today and month-end
+  // 1. Scheduled demos per AE: pulled from Calendly
   const scheduledByAE: Record<string, number> = {};
-  for (const ae of activeAEs) scheduledByAE[ae.id] = 0;
-
-  for (const deal of allDeals) {
-    const schedDate = getDemoScheduledDate(deal);
-    if (!schedDate || schedDate <= todayISO || schedDate > monthEndISO) continue;
-    const aeId = ownerMap[getVal(deal, "owner")];
-    if (aeId && scheduledByAE[aeId] !== undefined) {
-      scheduledByAE[aeId]++;
-    }
+  for (const ae of activeAEs) {
+    scheduledByAE[ae.id] = scheduledDemoCounts[ae.id] || 0;
   }
 
   // 2. Trailing 60-day CW rate per AE: of demos held in last 60 days, what % converted?
+  //    Primary source: Fireflies transcripts (meeting actually happened).
+  //    Fallback: Attio demo_held_date field.
   const demoPeopleByAE: Record<string, Set<string>> = {};
   for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
 
-  for (const deal of allDeals) {
-    const demoDate = getDemoHeldDate(deal);
-    if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
-    const aeId = ownerMap[getVal(deal, "owner")];
-    if (aeId && demoPeopleByAE[aeId]) {
-      for (const pid of getDealPersonIds(deal)) {
-        demoPeopleByAE[aeId].add(pid);
+  const hasFirefliesData = Object.values(heldDemosByRep).some((arr) => arr.length > 0);
+
+  if (hasFirefliesData) {
+    // Use Fireflies: count held demos per AE, then find associated deal person IDs
+    // to compute conversion rate against cwPersonIds.
+    for (const deal of allDeals) {
+      const aeId = ownerMap[getVal(deal, "owner")];
+      if (!aeId || !demoPeopleByAE[aeId]) continue;
+      const heldDemos = heldDemosByRep[aeId] || [];
+      if (heldDemos.length === 0) continue;
+      // If this AE had any Fireflies-verified demos in the window,
+      // include the deal's people for conversion tracking
+      const demoDate = getDemoHeldDate(deal);
+      const firefliesDates = new Set(heldDemos.map((d) => d.date));
+      // Match by Attio demo_held_date OR just count all deals for AEs with Fireflies activity
+      if (demoDate && firefliesDates.has(demoDate)) {
+        for (const pid of getDealPersonIds(deal)) {
+          demoPeopleByAE[aeId].add(pid);
+        }
+      }
+    }
+  } else {
+    // Fallback: use Attio demo_held_date
+    for (const deal of allDeals) {
+      const demoDate = getDemoHeldDate(deal);
+      if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
+      const aeId = ownerMap[getVal(deal, "owner")];
+      if (aeId && demoPeopleByAE[aeId]) {
+        for (const pid of getDealPersonIds(deal)) {
+          demoPeopleByAE[aeId].add(pid);
+        }
       }
     }
   }
@@ -1020,8 +1037,21 @@ export async function fetchMonthData(
   })();
   let forecast: ForecastData | null = null;
   if (selectedMonthStr === currentMonth) {
+    const todayISO = new Date().toISOString().split("T")[0];
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+      .toISOString().split("T")[0];
+    const reps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
+    reps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
+
+    // Fetch Calendly bookings + Fireflies held demos in parallel
+    const [scheduledDemoCounts, heldDemosByRep] = await Promise.all([
+      fetchScheduledDemosFromCalendly(reps, todayISO, endISO),
+      fetchHeldDemosFromFireflies(reps, sixtyDaysAgo, todayISO),
+    ]);
+
     forecast = computeForecast(
       allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
+      scheduledDemoCounts, heldDemosByRep,
     );
   }
 
