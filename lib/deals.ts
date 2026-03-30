@@ -848,6 +848,21 @@ export async function fetchMonthData(
     return d >= startISO && d <= endISO;
   });
 
+  // Intro calls: fetch deals in "Introductory Call" stage for calls-per-close metric
+  let introCallDeals: any[] = [];
+  try { introCallDeals = await fetchAllDeals({ stage: "Introductory Call" }); } catch {}
+  const introInMonth = introCallDeals.filter((deal: any) => {
+    const d = getDealDate(deal);
+    if (!d) return false;
+    return d >= startISO && d <= endISO;
+  });
+  const introCountByAE: Record<string, number> = {};
+  for (const ae of activeAEs) introCountByAE[ae.id] = 0;
+  for (const deal of introInMonth) {
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (aeId && introCountByAE[aeId] !== undefined) introCountByAE[aeId] += 1;
+  }
+
   const agg: Record<string, AERollup> = {};
   const closedWonDealsByAE: Record<string, DealDetail[]> = {};
   for (const ae of activeAEs) {
@@ -996,6 +1011,7 @@ export async function fetchMonthData(
       priorCwRate: priorCwRates[ae.id] ?? null,
       priorTboRate: priorTboRates[ae.id] ?? null,
       priorDemoCount: priorDemoCounts[ae.id] || 0,
+      introCallCount: introCountByAE[ae.id] || 0,
       attainment, commission,
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
