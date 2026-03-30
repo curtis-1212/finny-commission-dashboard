@@ -6,6 +6,7 @@ export interface AEConfig {
   role: string;
   initials: string;
   color: string;
+  email: string;
   baseSalary: number;
   variable: number;
   ote: number;
@@ -23,6 +24,7 @@ export interface BDRConfig {
   role: string;
   initials: string;
   color: string;
+  email: string;
   baseSalary: number;
   variable: number;
   ote: number;
@@ -39,7 +41,7 @@ export interface BDRConfig {
 export const AE_DATA: AEConfig[] = [
   {
     id: "jason", name: "Jason Vigilante", role: "Founding Account Executive",
-    initials: "JV", color: "#3B82F6",
+    initials: "JV", color: "#3B82F6", email: "jason@finny.com",
     baseSalary: 120000, variable: 120000, ote: 240000,
     monthlyQuota: 166666.67, annualQuota: 2000000,
     tiers: [
@@ -51,7 +53,7 @@ export const AE_DATA: AEConfig[] = [
   },
   {
     id: "kelcy", name: "Kelcy Koenig", role: "Founding Account Executive",
-    initials: "KK", color: "#F59E0B",
+    initials: "KK", color: "#F59E0B", email: "kelcy@finny.com",
     baseSalary: 168000, variable: 72000, ote: 240000,
     monthlyQuota: 166666.67, annualQuota: 2000000,
     tiers: [
@@ -63,7 +65,7 @@ export const AE_DATA: AEConfig[] = [
   },
   {
     id: "austin", name: "Austin Guest", role: "Account Executive",
-    initials: "AG", color: "#10B981",
+    initials: "AG", color: "#10B981", email: "austin@finny.com",
     baseSalary: 120000, variable: 120000, ote: 240000,
     monthlyQuota: 166666.67, annualQuota: 2000000,
     tiers: [
@@ -77,7 +79,7 @@ export const AE_DATA: AEConfig[] = [
   },
   {
     id: "roy", name: "Roy Kasten", role: "Account Executive",
-    initials: "RK", color: "#EF4444",
+    initials: "RK", color: "#EF4444", email: "roy@finny.com",
     baseSalary: 0, variable: 0, ote: 0,
     monthlyQuota: 208333.33, annualQuota: 2500000,
     tiers: [
@@ -92,7 +94,7 @@ export const AE_DATA: AEConfig[] = [
 
 export const BDR_DATA: BDRConfig = {
   id: "max", name: "Max Zajec", role: "Founding BDR",
-  initials: "MZ", color: "#8B5CF6",
+  initials: "MZ", color: "#8B5CF6", email: "max@finny.com",
   baseSalary: 70000, variable: 10000, ote: 80000,
   monthlyQuota: 25, monthlyTargetVariable: 833.33,
   perMeetingRate: 33, acceleratorRate: 40, acceleratorThreshold: 1.25,

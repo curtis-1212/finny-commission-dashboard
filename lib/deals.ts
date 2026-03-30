@@ -6,6 +6,7 @@ import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
     calcAECommission, calcBDRCommission, BDR_DATA,
 } from "@/lib/commission-config";
+import { fetchScheduledDemosFromCalendar, CalendarDemoCounts } from "@/lib/google-calendar";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -21,7 +22,6 @@ const USERS_PERSON_ATTR = process.env.ATTIO_USERS_PERSON_ATTR ?? "person";
 const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_people";
 
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
-const DEMO_SCHEDULED_DATE_ATTR = process.env.ATTIO_DEMO_SCHEDULED_DATE_ATTR || "demo_scheduled_date";
 
 const PAGE_SIZE = 500;
 
@@ -75,11 +75,6 @@ export function getDemoHeldDate(deal: any): string | null {
   return String(d).slice(0, 10);
 }
 
-export function getDemoScheduledDate(deal: any): string | null {
-  const d = getVal(deal, DEMO_SCHEDULED_DATE_ATTR);
-  if (!d) return null;
-  return String(d).slice(0, 10);
-}
 
 function getDealStage(deal: any): string | null {
   const s = getVal(deal, "stage");
@@ -448,22 +443,16 @@ function computeForecast(
   ownerMap: Record<string, string>,
   cwPersonIds: Set<string>,
   monthEndISO: string,
+  calendarDemoCounts: CalendarDemoCounts,
 ): ForecastData {
   const todayISO = new Date().toISOString().split("T")[0];
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     .toISOString().split("T")[0];
 
-  // 1. Scheduled demos per AE: deals with demo_scheduled_date between today and month-end
+  // 1. Scheduled demos per AE: pulled from Google Calendar
   const scheduledByAE: Record<string, number> = {};
-  for (const ae of activeAEs) scheduledByAE[ae.id] = 0;
-
-  for (const deal of allDeals) {
-    const schedDate = getDemoScheduledDate(deal);
-    if (!schedDate || schedDate <= todayISO || schedDate > monthEndISO) continue;
-    const aeId = ownerMap[getVal(deal, "owner")];
-    if (aeId && scheduledByAE[aeId] !== undefined) {
-      scheduledByAE[aeId]++;
-    }
+  for (const ae of activeAEs) {
+    scheduledByAE[ae.id] = calendarDemoCounts[ae.id] || 0;
   }
 
   // 2. Trailing 60-day CW rate per AE: of demos held in last 60 days, what % converted?
@@ -1020,8 +1009,14 @@ export async function fetchMonthData(
   })();
   let forecast: ForecastData | null = null;
   if (selectedMonthStr === currentMonth) {
+    const todayISO = new Date().toISOString().split("T")[0];
+    const reps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
+    // Include BDR calendar too
+    reps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
+    const calendarDemoCounts = await fetchScheduledDemosFromCalendar(reps, todayISO, endISO);
     forecast = computeForecast(
       allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
+      calendarDemoCounts,
     );
   }
 
