@@ -6,7 +6,8 @@ import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
     calcAECommission, calcBDRCommission, BDR_DATA,
 } from "@/lib/commission-config";
-import { fetchScheduledDemosFromCalendar, CalendarDemoCounts } from "@/lib/google-calendar";
+import { fetchScheduledDemosFromCalendly, ScheduledDemoCounts } from "@/lib/calendly";
+import { fetchHeldDemosFromFireflies, HeldDemosByRep } from "@/lib/fireflies";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -443,29 +444,56 @@ function computeForecast(
   ownerMap: Record<string, string>,
   cwPersonIds: Set<string>,
   monthEndISO: string,
-  calendarDemoCounts: CalendarDemoCounts,
+  scheduledDemoCounts: ScheduledDemoCounts,
+  heldDemosByRep: HeldDemosByRep,
 ): ForecastData {
   const todayISO = new Date().toISOString().split("T")[0];
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     .toISOString().split("T")[0];
 
-  // 1. Scheduled demos per AE: pulled from Google Calendar
+  // 1. Scheduled demos per AE: pulled from Calendly
   const scheduledByAE: Record<string, number> = {};
   for (const ae of activeAEs) {
-    scheduledByAE[ae.id] = calendarDemoCounts[ae.id] || 0;
+    scheduledByAE[ae.id] = scheduledDemoCounts[ae.id] || 0;
   }
 
   // 2. Trailing 60-day CW rate per AE: of demos held in last 60 days, what % converted?
+  //    Primary source: Fireflies transcripts (meeting actually happened).
+  //    Fallback: Attio demo_held_date field.
   const demoPeopleByAE: Record<string, Set<string>> = {};
   for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
 
-  for (const deal of allDeals) {
-    const demoDate = getDemoHeldDate(deal);
-    if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
-    const aeId = ownerMap[getVal(deal, "owner")];
-    if (aeId && demoPeopleByAE[aeId]) {
-      for (const pid of getDealPersonIds(deal)) {
-        demoPeopleByAE[aeId].add(pid);
+  const hasFirefliesData = Object.values(heldDemosByRep).some((arr) => arr.length > 0);
+
+  if (hasFirefliesData) {
+    // Use Fireflies: count held demos per AE, then find associated deal person IDs
+    // to compute conversion rate against cwPersonIds.
+    for (const deal of allDeals) {
+      const aeId = ownerMap[getVal(deal, "owner")];
+      if (!aeId || !demoPeopleByAE[aeId]) continue;
+      const heldDemos = heldDemosByRep[aeId] || [];
+      if (heldDemos.length === 0) continue;
+      // If this AE had any Fireflies-verified demos in the window,
+      // include the deal's people for conversion tracking
+      const demoDate = getDemoHeldDate(deal);
+      const firefliesDates = new Set(heldDemos.map((d) => d.date));
+      // Match by Attio demo_held_date OR just count all deals for AEs with Fireflies activity
+      if (demoDate && firefliesDates.has(demoDate)) {
+        for (const pid of getDealPersonIds(deal)) {
+          demoPeopleByAE[aeId].add(pid);
+        }
+      }
+    }
+  } else {
+    // Fallback: use Attio demo_held_date
+    for (const deal of allDeals) {
+      const demoDate = getDemoHeldDate(deal);
+      if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
+      const aeId = ownerMap[getVal(deal, "owner")];
+      if (aeId && demoPeopleByAE[aeId]) {
+        for (const pid of getDealPersonIds(deal)) {
+          demoPeopleByAE[aeId].add(pid);
+        }
       }
     }
   }
@@ -1010,13 +1038,20 @@ export async function fetchMonthData(
   let forecast: ForecastData | null = null;
   if (selectedMonthStr === currentMonth) {
     const todayISO = new Date().toISOString().split("T")[0];
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+      .toISOString().split("T")[0];
     const reps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
-    // Include BDR calendar too
     reps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
-    const calendarDemoCounts = await fetchScheduledDemosFromCalendar(reps, todayISO, endISO);
+
+    // Fetch Calendly bookings + Fireflies held demos in parallel
+    const [scheduledDemoCounts, heldDemosByRep] = await Promise.all([
+      fetchScheduledDemosFromCalendly(reps, todayISO, endISO),
+      fetchHeldDemosFromFireflies(reps, sixtyDaysAgo, todayISO),
+    ]);
+
     forecast = computeForecast(
       allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
-      calendarDemoCounts,
+      scheduledDemoCounts, heldDemosByRep,
     );
   }
 
