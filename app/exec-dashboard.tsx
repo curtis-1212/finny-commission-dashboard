@@ -47,6 +47,16 @@ interface ForecastData {
     totalQuota: number;
   };
 }
+interface FunnelLeaderboardEntry {
+  id: string; name: string; initials: string; color: string;
+  rank: number; demosInWindow: number; closedWonCount: number; tboCount: number;
+  cwRate: number | null; tboRate: number | null;
+  avgDaysToClose: number | null; speedScore: number; compositeScore: number;
+}
+interface FunnelLeaderboard {
+  entries: FunnelLeaderboardEntry[];
+  windowStart: string; windowEnd: string;
+}
 
 // ─── Brand: FINNY Style Guide (Light Mode) ──────────────────────────────────
 const C = {
@@ -549,6 +559,149 @@ function ForecastCard({ forecast, totalNetARR, totalQuota }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FUNNEL PROGRESSION LEADERBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
+function FunnelLeaderboardCard({ leaderboard }: { leaderboard: FunnelLeaderboard }) {
+  const entries = leaderboard.entries;
+  const colLabel: React.CSSProperties = {
+    fontSize: 9, fontWeight: 500, color: C.textDim, fontFamily: F.b,
+    letterSpacing: "0.08em", textTransform: "uppercase",
+  };
+  return (
+    <div style={{
+      marginTop: 12, borderRadius: 12,
+      border: `1px solid ${C.accent}25`,
+      background: C.card, overflow: "hidden",
+    }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 20px", borderBottom: `1px solid ${C.border}`,
+        background: `${C.accent}06`,
+      }}>
+        <div style={{
+          fontSize: 11, fontWeight: 600, color: C.accentDark,
+          fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase",
+        }}>
+          Funnel Progression
+        </div>
+        <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+          Trailing 30 days
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "36px 1fr 72px 72px 64px 56px 64px",
+        alignItems: "center", gap: 0,
+        padding: "10px 20px 6px",
+        borderBottom: `1px solid ${C.border}`,
+      }}>
+        <div style={colLabel}>#</div>
+        <div style={colLabel}>Name</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>TBO %</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>CW %</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Avg Days</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Demos</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Score</div>
+      </div>
+
+      {/* Rows */}
+      {entries.map((e, i) => {
+        const hasData = e.demosInWindow > 0;
+        return (
+          <div key={e.id} style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 72px 72px 64px 56px 64px",
+            alignItems: "center", gap: 0,
+            padding: "10px 20px",
+            borderBottom: i < entries.length - 1 ? `1px solid ${C.border}` : "none",
+            background: i === 0 && hasData ? `${C.accent}06` : "transparent",
+          }}>
+            {/* Rank */}
+            <div style={{
+              width: 22, height: 22, borderRadius: 6,
+              background: i === 0 && hasData ? C.accent : `${C.textGhost}20`,
+              color: i === 0 && hasData ? C.white : C.textDim,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700, fontFamily: F.m,
+            }}>
+              {e.rank}
+            </div>
+
+            {/* Name */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: "50%",
+                background: `${e.color}18`, border: `1.5px solid ${e.color}40`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: e.color, fontFamily: F.b,
+                flexShrink: 0,
+              }}>
+                {e.initials}
+              </div>
+              <div style={{
+                fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {e.name}
+              </div>
+            </div>
+
+            {/* TBO Rate */}
+            <div style={{
+              fontSize: 13, fontWeight: 600, fontFamily: F.m,
+              color: hasData ? C.text : C.textGhost, textAlign: "right",
+            }}>
+              {hasData && e.tboRate != null ? `${Math.round(e.tboRate * 100)}%` : "—"}
+            </div>
+
+            {/* CW Rate */}
+            <div style={{
+              fontSize: 13, fontWeight: 600, fontFamily: F.m,
+              color: hasData && e.cwRate != null && e.cwRate > 0 ? C.accentDark : hasData ? C.text : C.textGhost,
+              textAlign: "right",
+            }}>
+              {hasData && e.cwRate != null ? `${Math.round(e.cwRate * 100)}%` : "—"}
+            </div>
+
+            {/* Avg Days */}
+            <div style={{
+              fontSize: 13, fontWeight: 500, fontFamily: F.m,
+              color: hasData ? C.textSec : C.textGhost, textAlign: "right",
+            }}>
+              {hasData && e.avgDaysToClose != null ? `${e.avgDaysToClose}d` : "—"}
+            </div>
+
+            {/* Demos */}
+            <div style={{
+              fontSize: 13, fontWeight: 500, fontFamily: F.m,
+              color: hasData ? C.textSec : C.textGhost, textAlign: "right",
+            }}>
+              {e.demosInWindow}
+            </div>
+
+            {/* Composite Score */}
+            <div style={{ textAlign: "right" }}>
+              <span style={{
+                display: "inline-block",
+                padding: "2px 8px", borderRadius: 10,
+                fontSize: 11, fontWeight: 700, fontFamily: F.m,
+                background: hasData ? `${C.accent}15` : `${C.textGhost}12`,
+                color: hasData ? C.accentDark : C.textGhost,
+              }}>
+                {hasData ? e.compositeScore.toFixed(2) : "—"}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // DEAL LIST MODAL
 // ═══════════════════════════════════════════════════════════════════════════════
 function ExecDealListModal({ repName, closedWonDeals, optOutDeals, onClose }: {
@@ -665,6 +818,7 @@ export default function ExecDashboard() {
   const [aeResults, setAeResults] = useState<AEResult[]>([]);
   const [bdrResult, setBdrResult] = useState<BDRResult | null>(null);
   const [forecast, setForecast] = useState<ForecastData | null>(null);
+  const [funnelLeaderboard, setFunnelLeaderboard] = useState<FunnelLeaderboard | null>(null);
   const [dealModalAE, setDealModalAE] = useState<AEResult | null>(null);
 
   const [verification, setVerification] = useState<VerificationStatus | null>(null);
@@ -699,6 +853,7 @@ export default function ExecDashboard() {
       setAeResults(data.ae || []);
       setBdrResult(data.bdr || null);
       setForecast(data.forecast || null);
+      setFunnelLeaderboard(data.funnelLeaderboard || null);
       setFetchedAt(data.meta?.fetchedAt || "");
       setMonthLabel(data.meta?.monthLabel || "");
       setWarning(data.meta?.warning || "");
@@ -843,6 +998,11 @@ export default function ExecDashboard() {
             totalNetARR={totalNetARR}
             totalQuota={totalQuota}
           />
+        )}
+
+        {/* ─── FUNNEL PROGRESSION LEADERBOARD ────────────────────────── */}
+        {isLive && funnelLeaderboard && funnelLeaderboard.entries.length > 0 && (
+          <FunnelLeaderboardCard leaderboard={funnelLeaderboard} />
         )}
 
         {/* ─── "Connect to see data" state ──────────────────────────── */}

@@ -599,6 +599,142 @@ function computeForecast(
   };
 }
 
+// ─── Funnel Progression Leaderboard ────────────────────────────────────────
+
+export interface FunnelLeaderboardEntry {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+  rank: number;
+  demosInWindow: number;
+  closedWonCount: number;
+  tboCount: number;
+  cwRate: number | null;       // null if 0 demos
+  tboRate: number | null;      // null if 0 demos
+  avgDaysToClose: number | null; // null if no CW deals with demo dates
+  speedScore: number;          // 0–1, higher = faster
+  compositeScore: number;      // 0–1, higher = better
+}
+
+export interface FunnelLeaderboard {
+  entries: FunnelLeaderboardEntry[];
+  windowStart: string;  // ISO date
+  windowEnd: string;    // ISO date
+}
+
+/**
+ * Compute trailing 30-day funnel progression leaderboard.
+ * Ranks AEs by a composite of Demo→CW rate, Demo→TBO rate, and closing speed.
+ */
+function computeFunnelLeaderboard(
+  allDeals: any[],
+  closedWonDeals: any[],
+  activeAEs: AEConfig[],
+  ownerMap: Record<string, string>,
+  cwPersonIds: Set<string>,
+  tboPersonIds: Set<string>,
+): FunnelLeaderboard {
+  const todayISO = new Date().toISOString().split("T")[0];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString().split("T")[0];
+
+  const MAX_BENCHMARK_DAYS = 60;
+
+  // Per-AE: collect person IDs from demos held in the trailing 30-day window
+  const demoPeopleByAE: Record<string, Set<string>> = {};
+  const demoCountByAE: Record<string, number> = {};
+  for (const ae of activeAEs) {
+    demoPeopleByAE[ae.id] = new Set();
+    demoCountByAE[ae.id] = 0;
+  }
+
+  for (const deal of allDeals) {
+    const demoDate = getDemoHeldDate(deal);
+    if (!demoDate || demoDate < thirtyDaysAgo || demoDate > todayISO) continue;
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (!aeId || !demoPeopleByAE[aeId]) continue;
+    demoCountByAE[aeId]++;
+    for (const pid of getDealPersonIds(deal)) {
+      demoPeopleByAE[aeId].add(pid);
+    }
+  }
+
+  // Per-AE: count conversions and compute funnel days for CW deals
+  const funnelDaysByAE: Record<string, number[]> = {};
+  for (const ae of activeAEs) funnelDaysByAE[ae.id] = [];
+
+  // For CW deals, compute demo→close days (only for deals whose demo was in the window)
+  for (const deal of closedWonDeals) {
+    const demoDate = getDemoHeldDate(deal);
+    if (!demoDate || demoDate < thirtyDaysAgo || demoDate > todayISO) continue;
+    const closeDate = getDealDate(deal);
+    if (!closeDate) continue;
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (!aeId || !funnelDaysByAE[aeId]) continue;
+    const days = Math.round(
+      (new Date(closeDate).getTime() - new Date(demoDate).getTime()) /
+      (1000 * 60 * 60 * 24)
+    );
+    if (days >= 0) funnelDaysByAE[aeId].push(days);
+  }
+
+  const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  // Build entries
+  const entries: FunnelLeaderboardEntry[] = [];
+  for (const ae of activeAEs) {
+    const people = demoPeopleByAE[ae.id];
+    const demosInWindow = demoCountByAE[ae.id];
+
+    let cwCount = 0;
+    let tboCount = 0;
+    for (const pid of Array.from(people)) {
+      if (cwPersonIds.has(pid)) cwCount++;
+      if (cwPersonIds.has(pid) || tboPersonIds.has(pid)) tboCount++;
+    }
+
+    const cwRate = people.size > 0 ? cwCount / people.size : null;
+    const tboRate = people.size > 0 ? tboCount / people.size : null;
+    const funnelDays = funnelDaysByAE[ae.id];
+    const avgDaysToClose = funnelDays.length > 0 ? Math.round(avg(funnelDays)) : null;
+    const speedScore = avgDaysToClose != null
+      ? Math.max(0, 1 - avgDaysToClose / MAX_BENCHMARK_DAYS)
+      : 0;
+
+    // Composite: 45% CW rate, 20% TBO rate, 35% speed
+    const compositeScore = cwRate != null
+      ? (cwRate * 0.45) + ((tboRate ?? 0) * 0.20) + (speedScore * 0.35)
+      : 0;
+
+    entries.push({
+      id: ae.id,
+      name: ae.name,
+      initials: ae.initials,
+      color: ae.color,
+      rank: 0, // assigned after sorting
+      demosInWindow,
+      closedWonCount: cwCount,
+      tboCount,
+      cwRate,
+      tboRate,
+      avgDaysToClose,
+      speedScore,
+      compositeScore: Math.round(compositeScore * 1000) / 1000,
+    });
+  }
+
+  // Sort by composite score descending, assign ranks
+  entries.sort((a, b) => b.compositeScore - a.compositeScore);
+  entries.forEach((e, i) => { e.rank = i + 1; });
+
+  return {
+    entries,
+    windowStart: thirtyDaysAgo,
+    windowEnd: todayISO,
+  };
+}
+
 // ─── Main data-fetching function ────────────────────────────────────────────
 
 export interface MonthData {
@@ -626,6 +762,7 @@ export interface MonthData {
     attainment: number; commission: number;
   };
   forecast: ForecastData | null;
+  funnelLeaderboard: FunnelLeaderboard | null;
   meta: {
     fetchedAt: string; dealCount: number; monthLabel: string;
     selectedMonth: string; warning?: string;
@@ -888,10 +1025,16 @@ export async function fetchMonthData(
     );
   }
 
+  // ─── Funnel Progression Leaderboard (always computed, trailing 30 days) ──
+  const funnelLeaderboard = computeFunnelLeaderboard(
+    allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, tboPersonIds,
+  );
+
   return {
     aeResults,
     bdrResult,
     forecast,
+    funnelLeaderboard,
     meta: {
       fetchedAt: new Date().toISOString(),
       dealCount: totalDeals,

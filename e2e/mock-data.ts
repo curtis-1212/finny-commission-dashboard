@@ -131,6 +131,30 @@ export const execLiveResponse = {
       totalQuota: 541666.67,
     },
   },
+  funnelLeaderboard: {
+    entries: [
+      {
+        id: "jason", name: "Jason Vigilante", initials: "JV", color: "#3B82F6",
+        rank: 1, demosInWindow: 8, closedWonCount: 6, tboCount: 7,
+        cwRate: 0.75, tboRate: 0.88, avgDaysToClose: 14,
+        speedScore: 0.767, compositeScore: 0.782,
+      },
+      {
+        id: "kelcy", name: "Kelcy Koenig", initials: "KK", color: "#F59E0B",
+        rank: 2, demosInWindow: 7, closedWonCount: 4, tboCount: 5,
+        cwRate: 0.57, tboRate: 0.71, avgDaysToClose: 21,
+        speedScore: 0.65, compositeScore: 0.627,
+      },
+      {
+        id: "roy", name: "Roy Kasten", initials: "RK", color: "#EF4444",
+        rank: 3, demosInWindow: 5, closedWonCount: 2, tboCount: 3,
+        cwRate: 0.40, tboRate: 0.60, avgDaysToClose: 28,
+        speedScore: 0.533, compositeScore: 0.487,
+      },
+    ],
+    windowStart: "2026-02-28",
+    windowEnd: "2026-03-30",
+  },
   meta: { fetchedAt, monthLabel, warning: "" },
   availableMonths,
   mode: "live",
