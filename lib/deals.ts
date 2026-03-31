@@ -852,8 +852,11 @@ export async function fetchMonthData(
   let introCallDeals: any[] = [];
   try { introCallDeals = await fetchAllDeals({ stage: "Introductory Call" }); } catch {}
   const introInMonth = introCallDeals.filter((deal: any) => {
-    const d = getDealDate(deal);
-    if (!d) return false;
+    // Use created_at instead of close_date — Introductory Call deals
+    // haven't closed yet, so close_date is typically empty.
+    const raw = getVal(deal, "created_at") || deal?.id?.created_at;
+    if (!raw) return false;
+    const d = String(raw).slice(0, 10);
     return d >= startISO && d <= endISO;
   });
   const introCountByAE: Record<string, number> = {};
