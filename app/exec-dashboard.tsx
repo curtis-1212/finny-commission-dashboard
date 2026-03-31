@@ -14,6 +14,10 @@ interface TranscriptMetrics {
 interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
+  fullQuota?: number;
+  rampFactor?: number;
+  rampMonth?: number | null;
+  isRamping?: boolean;
   grossARR?: number; churnARR?: number; netARR?: number;
   dealCount?: number; churnCount?: number; excludedCount?: number;
   demoCount?: number;
@@ -35,6 +39,7 @@ interface BDRResult {
   monthlyQuota: number;
   totalMeetings?: number; netMeetings?: number;
   attainment?: number; commission?: number;
+  demoDetails?: { name: string; date: string }[];
 }
 type RepResult = AEResult | BDRResult;
 interface MonthOption { value: string; label: string }
@@ -450,6 +455,81 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BDR PLANBAR WITH DEMO TOOLTIP
+// ═══════════════════════════════════════════════════════════════════════════════
+function BDRPlanBarWithTooltip({ bdrResult, pace }: {
+  bdrResult: BDRResult;
+  pace?: number | null;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const demos = bdrResult.demoDetails || [];
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <PlanBar
+        name={bdrResult.name}
+        initials={bdrResult.initials}
+        actual={bdrResult.netMeetings || 0}
+        quota={bdrResult.monthlyQuota}
+        att={bdrResult.attainment || 0}
+        commission={bdrResult.commission || 0}
+        deals={0}
+        type="bdr"
+        pace={pace}
+      />
+      {showTooltip && demos.length > 0 && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 20,
+          zIndex: 50,
+          background: C.card,
+          border: `1px solid ${C.borderMed}`,
+          borderRadius: 10,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+          padding: "12px 16px",
+          minWidth: 280,
+          maxWidth: 380,
+          maxHeight: 300,
+          overflowY: "auto" as const,
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: C.textDim,
+            fontFamily: F.b, letterSpacing: "0.06em",
+            textTransform: "uppercase" as const, marginBottom: 8,
+          }}>
+            Demos Held ({demos.length})
+          </div>
+          {demos.map((d, i) => (
+            <div key={i} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "6px 0",
+              borderBottom: i < demos.length - 1 ? `1px solid ${C.border}` : "none",
+            }}>
+              <div style={{
+                fontSize: 12, fontWeight: 500, color: C.text, fontFamily: F.b,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+                flex: 1, marginRight: 12,
+              }}>
+                {d.name}
+              </div>
+              <div style={{
+                fontSize: 11, color: C.textGhost, fontFamily: F.m, flexShrink: 0,
+              }}>
+                {d.date}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FORECAST CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 function ForecastCard({ forecast, totalNetARR, totalQuota }: {
@@ -721,6 +801,18 @@ function FunnelLeaderboardCard({ leaderboard }: { leaderboard: FunnelLeaderboard
           </div>
         );
       })}
+
+      {/* Score footnote */}
+      <div style={{
+        padding: "10px 20px 14px",
+        fontSize: 10,
+        color: C.textGhost,
+        fontFamily: F.b,
+        fontStyle: "italic",
+        borderTop: `1px solid ${C.border}`,
+      }}>
+        Score = 45% Close-Won Rate + 20% TBO Rate + 35% Speed, where Speed = 1 − (Avg Days to Close / 60)
+      </div>
     </div>
   );
 }
@@ -1157,28 +1249,46 @@ export default function ExecDashboard() {
         {isLive && aeResults.length > 0 && (
           <div style={{
             display: "flex", flexWrap: "wrap" as const, gap: 0,
-            padding: "0 20px",
             marginTop: 20,
             background: C.card,
             borderRadius: 12,
             border: `1px solid ${C.border}`,
           }}>
-            <KPI label="Net New ARR" value={fmt(totalNetARR)} large />
-            <div style={{ padding: "0 20px" }}>
-              <KPI label="% to Plan" value={fmtPct0(teamAttainment)}
-                sub={teamAttainment >= 1 ? "On track" : `${fmtK(Math.max(0, totalQuota - totalNetARR))} remaining`}
-                accent={teamAttainment >= 1} large />
-            </div>
-            <div style={{ padding: "0 20px" }}>
-              <KPI label="Total Commission" value={fmt(totalComm)} accent large />
-            </div>
-            <div style={{ padding: "0 20px" }}>
-              <KPI label="Prior Mo. CW Opt-Outs" value={fmtPct(optOutRate)}
-                sub={totalOptOutCount > 0 ? `${totalOptOutCount} deals · ${fmtK(totalOptOutARR)}` : "None"} large />
-            </div>
-            <div style={{ padding: "0 20px", borderRight: "none" }}>
-              <KPI label="Deals Closed" value={String(totalDeals)} large />
-            </div>
+            {[
+              { label: "Net New ARR", value: fmt(totalNetARR) },
+              { label: "% to Plan", value: fmtPct0(teamAttainment),
+                sub: teamAttainment >= 1 ? "On track" : `${fmtK(Math.max(0, totalQuota - totalNetARR))} remaining`,
+                accent: teamAttainment >= 1 },
+              { label: "Total Commission", value: fmt(totalComm), accent: true },
+              { label: "Prior Mo. CW Opt-Outs", value: fmtPct(optOutRate),
+                sub: totalOptOutCount > 0 ? `${totalOptOutCount} deals · ${fmtK(totalOptOutARR)}` : "None" },
+              { label: "Deals Closed", value: String(totalDeals) },
+            ].map((kpi, i, arr) => (
+              <div key={i} style={{
+                flex: "1 1 0",
+                padding: "20px 16px",
+                borderRight: i < arr.length - 1 ? `1px solid ${C.border}` : "none",
+                textAlign: "center" as const,
+              }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 500, color: C.textDim,
+                  fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+                  marginBottom: 8,
+                }}>{kpi.label}</div>
+                <div style={{
+                  fontSize: 28, fontWeight: 700,
+                  fontFamily: F.m, letterSpacing: "-0.03em",
+                  color: kpi.accent ? C.accent : C.text,
+                  lineHeight: 1,
+                }}>{kpi.value}</div>
+                {kpi.sub && (
+                  <div style={{
+                    fontSize: 11, color: C.textDim, fontFamily: F.b,
+                    marginTop: 4,
+                  }}>{kpi.sub}</div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -1432,31 +1542,64 @@ export default function ExecDashboard() {
 
             {/* AE rows */}
             {sortedAEs.map((ae) => (
-              <PlanBar
-                key={ae.id}
-                name={ae.name}
-                initials={ae.initials}
-                actual={ae.netARR || 0}
-                grossARR={ae.grossARR || 0}
-                quota={ae.monthlyQuota}
-                att={ae.attainment || 0}
-                commission={ae.commission || 0}
-                deals={ae.dealCount || 0}
-                demoCount={ae.demoCount || 0}
-                introCallCount={ae.introCallCount || 0}
-                cwRate={ae.cwRate}
-                tboRate={ae.tboRate}
-                priorCwRate={ae.priorCwRate}
-                priorTboRate={ae.priorTboRate}
-                cwRateLabel={cwRateLabel}
-                optOutARR={ae.optOutARR}
-                optOutCount={ae.optOutCount}
-                type="ae"
-                pace={pace}
-                onClick={() => setDealModalAE(ae)}
-                forecastARR={forecast?.perAE[ae.id]?.projectedARR ?? null}
-              />
+              <div key={ae.id}>
+                <PlanBar
+                  name={ae.name}
+                  initials={ae.initials}
+                  actual={ae.netARR || 0}
+                  grossARR={ae.grossARR || 0}
+                  quota={ae.monthlyQuota}
+                  att={ae.attainment || 0}
+                  commission={ae.commission || 0}
+                  deals={ae.dealCount || 0}
+                  demoCount={ae.demoCount || 0}
+                  introCallCount={ae.introCallCount || 0}
+                  cwRate={ae.cwRate}
+                  tboRate={ae.tboRate}
+                  priorCwRate={ae.priorCwRate}
+                  priorTboRate={ae.priorTboRate}
+                  cwRateLabel={cwRateLabel}
+                  optOutARR={ae.optOutARR}
+                  optOutCount={ae.optOutCount}
+                  type="ae"
+                  pace={pace}
+                  onClick={() => setDealModalAE(ae)}
+                  forecastARR={forecast?.perAE[ae.id]?.projectedARR ?? null}
+                />
+                {ae.isRamping && ae.rampMonth != null && (
+                  <div style={{
+                    padding: "4px 20px 8px 64px",
+                    marginTop: -8,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, fontFamily: F.b,
+                      color: C.primary, background: C.primaryFaint,
+                      padding: "2px 8px", borderRadius: 6,
+                    }}>
+                      Ramp Month {ae.rampMonth}/3
+                    </span>
+                    <span style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+                      {Math.round((ae.rampFactor || 1) * 100)}% quota target ({fmtK(ae.monthlyQuota)} of {fmtK(ae.fullQuota || ae.monthlyQuota)})
+                    </span>
+                  </div>
+                )}
+              </div>
             ))}
+
+            {/* Ramp footnote (if any AEs are ramping) */}
+            {sortedAEs.some((ae) => ae.isRamping) && (
+              <div style={{
+                padding: "8px 20px 10px",
+                fontSize: 10,
+                color: C.textGhost,
+                fontFamily: F.b,
+                fontStyle: "italic",
+                borderTop: `1px solid ${C.border}`,
+              }}>
+                New AE ramp schedule: Month 1 = 50% quota, Month 2 = 75% quota, Month 3+ = 100% quota. Commission tiers scale proportionally.
+              </div>
+            )}
 
             {/* ── BDRs Subheader + Row ── */}
             {bdrResult && (
@@ -1476,15 +1619,8 @@ export default function ExecDashboard() {
                   </div>
                 </div>
 
-                <PlanBar
-                  name={bdrResult.name}
-                  initials={bdrResult.initials}
-                  actual={bdrResult.netMeetings || 0}
-                  quota={bdrResult.monthlyQuota}
-                  att={bdrResult.attainment || 0}
-                  commission={bdrResult.commission || 0}
-                  deals={0}
-                  type="bdr"
+                <BDRPlanBarWithTooltip
+                  bdrResult={bdrResult}
                   pace={pace}
                 />
               </>

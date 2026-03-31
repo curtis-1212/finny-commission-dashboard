@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   AE_DATA, BDR_DATA, calcAECommission, calcBDRCommission,
   getMonthRange, parseMonthParam, getAvailableMonths,
-  buildOwnerMap, getActiveAEs,
+  buildOwnerMap, getActiveAEs, getAERampInfo,
 } from "@/lib/commission-config";
 import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggregation, fetchAllDeals, getDemoHeldDate, getDealPersonIds, type DealDetail } from "@/lib/deals";
 import { attioQuery, getVal } from "@/lib/attio";
@@ -112,8 +112,14 @@ export async function GET(
       });
       
       let meetings = 0, introCallCount = 0;
+      const demoDetails: { name: string; date: string }[] = [];
       for (const deal of demoInMonth) {
-        if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) meetings += 1;
+        if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) {
+          meetings += 1;
+          const dealName = getVal(deal, "name") || "Unnamed Deal";
+          const demoDate = getDemoHeldDate(deal) || "";
+          demoDetails.push({ name: String(dealName), date: demoDate });
+        }
       }
       for (const deal of introInMonth) {
         if (getVal(deal, "lead_owner") === process.env.ATTIO_MAX_UUID) introCallCount += 1;
@@ -121,7 +127,7 @@ export async function GET(
       const { commission, attainment, monthlyQuota } = calcBDRCommission(meetings, selectedMonth);
       return NextResponse.json({
         rep: { id: "max", name: BDR_DATA.name, role: BDR_DATA.role, initials: BDR_DATA.initials, color: BDR_DATA.color, type: "bdr" },
-        metrics: { netMeetings: meetings, monthlyTarget: monthlyQuota, attainment, commission, introCallsScheduled: introCallCount },
+        metrics: { netMeetings: meetings, monthlyTarget: monthlyQuota, attainment, commission, introCallsScheduled: introCallCount, demoDetails },
         meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },
         availableMonths: getAvailableMonths(),
       });
@@ -211,7 +217,8 @@ export async function GET(
     const tboRate = demoCount > 0 ? tboConverted / demoCount : null;
 
     const netARR = grossARR - optOutARR;
-    const { commission, attainment, tierBreakdown } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR);
+    const rampInfo = getAERampInfo(ae, selectedMonth);
+    const { commission, attainment, tierBreakdown, effectiveQuota } = calcAECommission(ae.monthlyQuota, ae.tiers, netARR, rampInfo.rampFactor);
 
     // Leaderboard uses opt-out data (not churn)
     const leaderboard = activeAEs.map((lbAe) => {
@@ -260,7 +267,11 @@ export async function GET(
     return NextResponse.json({
       rep: { id: ae.id, name: ae.name, role: ae.role, initials: ae.initials, color: ae.color, type: "ae" },
       metrics: {
-        grossARR, churnARR, netARR, monthlyQuota: ae.monthlyQuota, attainment, commission,
+        grossARR, churnARR, netARR, monthlyQuota: effectiveQuota, attainment, commission,
+        fullQuota: ae.monthlyQuota,
+        rampFactor: rampInfo.rampFactor,
+        rampMonth: rampInfo.rampMonth,
+        isRamping: rampInfo.isRamping,
         tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
         introCallsScheduled: introCallCount,
         toBeOnboarded: { count: toBeOnboardedCount, arr: toBeOnboardedARR },

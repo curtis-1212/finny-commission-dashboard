@@ -4,10 +4,11 @@
 import { attioQuery, getVal } from "@/lib/attio";
 import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
-    calcAECommission, calcBDRCommission, BDR_DATA,
+    calcAECommission, calcBDRCommission, BDR_DATA, getAERampInfo, type AERampInfo,
 } from "@/lib/commission-config";
-import { fetchScheduledDemosFromCalendly, ScheduledDemoCounts } from "@/lib/calendly";
+import { fetchScheduledDemosFromCalendly, fetchPastCalendlyEvents, ScheduledDemoCounts } from "@/lib/calendly";
 import { fetchHeldDemosFromFireflies, HeldDemosByRep, fetchTranscriptInsights, computeTranscriptMetrics, AETranscriptMetrics } from "@/lib/fireflies";
+import { triangulateHeldDemos, confirmedToHeldFormat, type AttioDemosByRep, type ConfirmedDemosByRep } from "@/lib/demo-triangulation";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -758,6 +759,10 @@ export interface MonthData {
   aeResults: {
     id: string; name: string; role: string; initials: string; color: string;
     type: "ae"; monthlyQuota: number; annualQuota: number;
+    fullQuota?: number;
+    rampFactor?: number;
+    rampMonth?: number | null;
+    isRamping?: boolean;
     grossARR: number; churnARR: number; netARR: number;
     dealCount: number; churnCount: number; closedLostCount: number; closedLostARR: number;
     optOutARR: number; optOutCount: number;
@@ -778,6 +783,7 @@ export interface MonthData {
     type: "bdr"; monthlyQuota: number;
     totalMeetings: number; netMeetings: number;
     attainment: number; commission: number;
+    demoDetails?: { name: string; date: string }[];
   };
   forecast: ForecastData | null;
   funnelLeaderboard: FunnelLeaderboard | null;
@@ -993,8 +999,9 @@ export async function fetchMonthData(
       closedLostCount: 0, closedLostARR: 0,
       optOutARR: 0, optOutCount: 0,
     };
-    const { commission, attainment, tierBreakdown } = calcAECommission(
-      ae.monthlyQuota, ae.tiers, a.netARR,
+    const rampInfo = getAERampInfo(ae, selectedMonthStr);
+    const { commission, attainment, tierBreakdown, effectiveQuota } = calcAECommission(
+      ae.monthlyQuota, ae.tiers, a.netARR, rampInfo.rampFactor,
     );
     const demoCount = demoCounts[ae.id] || 0;
     const cwRate = cwRates[ae.id] ?? null;
@@ -1004,7 +1011,11 @@ export async function fetchMonthData(
       id: ae.id, name: ae.name, role: ae.role,
       initials: ae.initials, color: ae.color,
       type: "ae" as const,
-      monthlyQuota: ae.monthlyQuota, annualQuota: ae.annualQuota,
+      monthlyQuota: effectiveQuota, annualQuota: ae.annualQuota,
+      fullQuota: ae.monthlyQuota,
+      rampFactor: rampInfo.rampFactor,
+      rampMonth: rampInfo.rampMonth,
+      isRamping: rampInfo.isRamping,
       grossARR: a.grossARR, churnARR: a.churnARR, netARR: a.netARR,
       dealCount: a.dealCount, churnCount: a.churnCount,
       closedLostCount: a.closedLostCount, closedLostARR: a.closedLostARR,
@@ -1026,9 +1037,15 @@ export async function fetchMonthData(
 
   // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
   let maxMeetings = 0;
+  const maxDemoDetails: { name: string; date: string }[] = [];
   for (const deal of demosInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
-    if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
+    if (leadOwner === process.env.ATTIO_MAX_UUID) {
+      maxMeetings += 1;
+      const dealName = getVal(deal, "name") || "Unnamed Deal";
+      const demoDate = getDemoHeldDate(deal) || "";
+      maxDemoDetails.push({ name: String(dealName), date: demoDate });
+    }
   }
 
   const {
@@ -1043,6 +1060,7 @@ export async function fetchMonthData(
     monthlyQuota: bdrMonthlyQuota,
     totalMeetings: maxMeetings, netMeetings: maxMeetings,
     attainment: bdrAttainment, commission: bdrCommission,
+    demoDetails: maxDemoDetails,
   };
 
   const totalDeals = wonInMonth.length;
@@ -1064,15 +1082,37 @@ export async function fetchMonthData(
     const reps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
     reps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
 
-    // Fetch Calendly bookings + Fireflies held demos in parallel
-    const [scheduledDemoCounts, heldDemosByRep] = await Promise.all([
+    // Fetch Calendly bookings + Fireflies held demos + past Calendly events in parallel
+    const [scheduledDemoCounts, heldDemosByRep, pastCalendlyEvents] = await Promise.all([
       fetchScheduledDemosFromCalendly(reps, todayISO, endISO),
       fetchHeldDemosFromFireflies(reps, sixtyDaysAgo, todayISO),
+      fetchPastCalendlyEvents(reps, sixtyDaysAgo, todayISO),
     ]);
+
+    // Build Attio demo data for triangulation
+    const attioDemosByRep: AttioDemosByRep = {};
+    for (const rep of reps) attioDemosByRep[rep.id] = [];
+    for (const deal of allDeals) {
+      const demoDate = getDemoHeldDate(deal);
+      if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
+      const aeId = OWNER_MAP[getVal(deal, "owner")];
+      if (aeId && attioDemosByRep[aeId]) {
+        attioDemosByRep[aeId].push({
+          date: demoDate,
+          dealName: String(getVal(deal, "name") || "Unnamed Deal"),
+        });
+      }
+    }
+
+    // Triangulate across sources
+    const confirmedDemos = triangulateHeldDemos(
+      pastCalendlyEvents, heldDemosByRep, attioDemosByRep,
+    );
+    const triangulatedHeldDemos = confirmedToHeldFormat(confirmedDemos);
 
     forecast = computeForecast(
       allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
-      scheduledDemoCounts, heldDemosByRep,
+      scheduledDemoCounts, triangulatedHeldDemos,
     );
   }
 
