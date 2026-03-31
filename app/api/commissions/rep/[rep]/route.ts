@@ -8,6 +8,7 @@ import { fetchChurnedUsersFromUsersList, buildChurnAggregation, buildOptOutAggre
 import { attioQuery, getVal } from "@/lib/attio";
 import { getAppSession } from "@/lib/auth";
 import { getUserRole } from "@/lib/roles";
+import { fetchTranscriptInsights, computeTranscriptMetrics } from "@/lib/fireflies";
 
 export const revalidate = 0;
 
@@ -223,6 +224,39 @@ export async function GET(
       return { id: lbAe.id, name: lbAe.name, initials: lbAe.initials, color: lbAe.color, netARR: lbGross - lbOptOutARR };
     }).sort((a, b) => b.netARR - a.netARR);
 
+    // ─── Transcript Insights ──────────────────────────────────────────────
+    const transcriptsByRep = await fetchTranscriptInsights(
+      [{ id: ae.id, email: ae.email }], startISO, endISO,
+    );
+    const insights = transcriptsByRep[ae.id] || [];
+    // Tag outcomes by matching transcript date to deals with demo_held_date
+    for (const insight of insights) {
+      const matchingDeals = allDeals.filter((deal: any) => {
+        const d = getDemoHeldDate(deal);
+        if (!d || d !== insight.date) return false;
+        return OWNER_MAP[getVal(deal, "owner")] === ae.id;
+      });
+      if (matchingDeals.length > 0) {
+        let isWon = false, isLost = false;
+        for (const deal of matchingDeals) {
+          for (const pid of getDealPersonIds(deal)) {
+            if (cwPersonIds.has(pid)) isWon = true;
+          }
+        }
+        if (!isWon) {
+          for (const deal of matchingDeals) {
+            for (const pid of getDealPersonIds(deal)) {
+              const inLost = closedLostAll.some((ld: any) =>
+                getDealPersonIds(ld).includes(pid));
+              if (inLost) isLost = true;
+            }
+          }
+        }
+        insight.outcome = isWon ? "won" : isLost ? "lost" : "pending";
+      }
+    }
+    const transcriptInsights = computeTranscriptMetrics(insights);
+
     return NextResponse.json({
       rep: { id: ae.id, name: ae.name, role: ae.role, initials: ae.initials, color: ae.color, type: "ae" },
       metrics: {
@@ -240,6 +274,7 @@ export async function GET(
         dealCount: closedWonCount, excludedCount: churnedCount,
         closedWonDeals: closedWonDealDetails,
         optOutDeals: optOutDealDetails,
+        transcriptInsights: transcriptInsights.totalAnalyzed > 0 ? transcriptInsights : undefined,
       },
       leaderboard,
       meta: { fetchedAt: new Date().toISOString(), monthLabel, selectedMonth },

@@ -7,7 +7,7 @@ import {
     calcAECommission, calcBDRCommission, BDR_DATA,
 } from "@/lib/commission-config";
 import { fetchScheduledDemosFromCalendly, ScheduledDemoCounts } from "@/lib/calendly";
-import { fetchHeldDemosFromFireflies, HeldDemosByRep } from "@/lib/fireflies";
+import { fetchHeldDemosFromFireflies, HeldDemosByRep, fetchTranscriptInsights, computeTranscriptMetrics, AETranscriptMetrics } from "@/lib/fireflies";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -771,6 +771,7 @@ export interface MonthData {
     tierBreakdown: { label?: string; amount: number }[];
     closedWonDeals: DealDetail[];
     optOutDeals: DealDetail[];
+    transcriptInsights?: AETranscriptMetrics;
   }[];
   bdrResult: {
     id: string; name: string; role: string; initials: string; color: string;
@@ -1019,6 +1020,7 @@ export async function fetchMonthData(
       tierBreakdown: tierBreakdown.map((t) => ({ label: t.label, amount: t.amount })),
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
       optOutDeals: optOutData?.deals || [],
+      transcriptInsights: undefined as AETranscriptMetrics | undefined,
     };
   });
 
@@ -1078,6 +1080,90 @@ export async function fetchMonthData(
   const funnelLeaderboard = computeFunnelLeaderboard(
     allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, tboPersonIds,
   );
+
+  // ─── Transcript Insights (Fireflies) ───────────────────────────────────────
+  const aeReps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
+  const transcriptsByRep = await fetchTranscriptInsights(aeReps, startISO, endISO);
+
+  // Tag transcript outcomes by matching participant emails to deals
+  // Build a map: participant email (lowercased) → deal stages for deals owned by each AE
+  const dealStageByParticipant: Record<string, Record<string, Set<string>>> = {}; // aeId → email → stages
+  for (const ae of activeAEs) dealStageByParticipant[ae.id] = {};
+
+  for (const deal of [...closedWonDeals, ...closedLostDeals]) {
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (!aeId || !dealStageByParticipant[aeId]) continue;
+    const stage = getVal(deal, "stage");
+    const stageName = typeof stage === "string" ? stage
+      : stage?.status?.title || stage?.title || "";
+    const participants = deal?.values?.["associated_people"] || [];
+    // Also check email attributes on the deal
+    const emailVals = deal?.values?.["email_addresses"] || deal?.values?.["email"] || [];
+    const emails: string[] = [];
+    if (Array.isArray(emailVals)) {
+      for (const ev of emailVals) {
+        const email = ev?.email_address || ev?.value || ev;
+        if (typeof email === "string") emails.push(email.toLowerCase());
+      }
+    }
+    for (const email of emails) {
+      if (!dealStageByParticipant[aeId][email]) dealStageByParticipant[aeId][email] = new Set();
+      dealStageByParticipant[aeId][email].add(stageName);
+    }
+  }
+
+  // Tag outcomes and compute metrics per AE
+  const transcriptMetricsByAE: Record<string, AETranscriptMetrics> = {};
+  for (const ae of activeAEs) {
+    const insights = transcriptsByRep[ae.id] || [];
+    // Tag outcomes: match transcript participants to deal participants
+    // Simple heuristic: if a transcript's non-rep participants appear in CW deals → "won",
+    // in CL deals → "lost", otherwise "pending"
+    for (const insight of insights) {
+      // We don't have per-transcript participant emails in insights, so use date-based matching:
+      // Find deals with demo_held_date matching the transcript date and same AE owner
+      const matchingDeals = allDeals.filter((deal: any) => {
+        const demoDate = getDemoHeldDate(deal);
+        if (!demoDate || demoDate !== insight.date) return false;
+        return OWNER_MAP[getVal(deal, "owner")] === ae.id;
+      });
+      if (matchingDeals.length > 0) {
+        // Check if any matched deal reached CW or CL
+        let isWon = false, isLost = false;
+        for (const deal of matchingDeals) {
+          for (const pid of getDealPersonIds(deal)) {
+            if (cwPersonIds.has(pid)) isWon = true;
+          }
+        }
+        if (!isWon) {
+          // Check closed lost
+          for (const deal of matchingDeals) {
+            const closeDate = getDealDate(deal);
+            if (closeDate) {
+              const inLost = closedLostDeals.some((ld: any) => {
+                for (const pid of getDealPersonIds(deal)) {
+                  const ldPids = getDealPersonIds(ld);
+                  if (ldPids.includes(pid)) return true;
+                }
+                return false;
+              });
+              if (inLost) isLost = true;
+            }
+          }
+        }
+        insight.outcome = isWon ? "won" : isLost ? "lost" : "pending";
+      }
+    }
+    transcriptMetricsByAE[ae.id] = computeTranscriptMetrics(insights);
+  }
+
+  // Attach transcript insights to AE results
+  for (const aeResult of aeResults) {
+    const metrics = transcriptMetricsByAE[aeResult.id];
+    if (metrics && metrics.totalAnalyzed > 0) {
+      aeResult.transcriptInsights = metrics;
+    }
+  }
 
   return {
     aeResults,

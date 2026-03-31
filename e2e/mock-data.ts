@@ -1,6 +1,32 @@
 // Mock API responses for Playwright screenshot tests.
 // Shapes match the real API routes in app/api/commissions/.
 
+// Transcript insight mock data per AE
+const jasonTranscriptInsights = {
+  avgTalkRatio: 0.42,
+  avgDurationMinutes: 34,
+  sentimentBreakdown: { positive: 5, neutral: 2, negative: 1 },
+  wonMetrics: { avgTalkRatio: 0.38, avgDuration: 37, avgSentimentScore: 0.83 },
+  lostMetrics: { avgTalkRatio: 0.61, avgDuration: 21, avgSentimentScore: 0.35 },
+  totalAnalyzed: 8,
+};
+const kelcyTranscriptInsights = {
+  avgTalkRatio: 0.48,
+  avgDurationMinutes: 31,
+  sentimentBreakdown: { positive: 3, neutral: 2, negative: 1 },
+  wonMetrics: { avgTalkRatio: 0.44, avgDuration: 35, avgSentimentScore: 0.75 },
+  lostMetrics: { avgTalkRatio: 0.58, avgDuration: 19, avgSentimentScore: 0.42 },
+  totalAnalyzed: 6,
+};
+const royTranscriptInsights = {
+  avgTalkRatio: 0.63,
+  avgDurationMinutes: 26,
+  sentimentBreakdown: { positive: 1, neutral: 2, negative: 2 },
+  wonMetrics: { avgTalkRatio: 0.52, avgDuration: 32, avgSentimentScore: 0.67 },
+  lostMetrics: { avgTalkRatio: 0.71, avgDuration: 18, avgSentimentScore: 0.25 },
+  totalAnalyzed: 5,
+};
+
 const availableMonths = [
   { value: "2025-11", label: "Nov 2025" },
   { value: "2025-12", label: "Dec 2025" },
@@ -43,6 +69,7 @@ export const execLiveResponse = {
       optOutDeals: [
         { name: "CloudBridge AI", value: 15000, closeDate: "2026-02-18" },
       ],
+      transcriptInsights: jasonTranscriptInsights,
     },
     {
       id: "kelcy", name: "Kelcy Koenig", role: "Founding Account Executive",
@@ -66,6 +93,7 @@ export const execLiveResponse = {
         { name: "Redwood Partners", value: 24000, closeDate: "2026-03-20" },
       ],
       optOutDeals: [],
+      transcriptInsights: kelcyTranscriptInsights,
     },
     {
       id: "roy", name: "Roy Kasten", role: "Account Executive",
@@ -90,6 +118,7 @@ export const execLiveResponse = {
       optOutDeals: [
         { name: "Beacon Financial", value: 20000, closeDate: "2026-02-22" },
       ],
+      transcriptInsights: royTranscriptInsights,
     },
   ],
   bdr: {
@@ -197,6 +226,7 @@ export const repResponses: Record<string, object> = {
       optOutDeals: [
         { name: "CloudBridge AI", value: 15000, closeDate: "2026-02-18" },
       ],
+      transcriptInsights: jasonTranscriptInsights,
     },
     leaderboard,
     meta: { fetchedAt, monthLabel, selectedMonth },
@@ -227,6 +257,7 @@ export const repResponses: Record<string, object> = {
         { name: "Redwood Partners", value: 24000, closeDate: "2026-03-20" },
       ],
       optOutDeals: [],
+      transcriptInsights: kelcyTranscriptInsights,
     },
     leaderboard,
     meta: { fetchedAt, monthLabel, selectedMonth },
@@ -258,6 +289,7 @@ export const repResponses: Record<string, object> = {
       optOutDeals: [
         { name: "Beacon Financial", value: 20000, closeDate: "2026-02-22" },
       ],
+      transcriptInsights: royTranscriptInsights,
     },
     leaderboard,
     meta: { fetchedAt, monthLabel, selectedMonth },
