@@ -6,6 +6,14 @@ import { useParams } from "next/navigation";
 interface RepInfo { id: string; name: string; role: string; initials: string; color: string; type: string }
 interface StageCount { count: number; arr: number }
 interface DealDetail { name: string; value: number; closeDate: string; recordId?: string }
+interface TranscriptMetrics {
+  avgTalkRatio: number | null;
+  avgDurationMinutes: number | null;
+  sentimentBreakdown: { positive: number; neutral: number; negative: number };
+  wonMetrics: { avgTalkRatio: number | null; avgDuration: number | null; avgSentimentScore: number | null } | null;
+  lostMetrics: { avgTalkRatio: number | null; avgDuration: number | null; avgSentimentScore: number | null } | null;
+  totalAnalyzed: number;
+}
 interface AEMetrics {
   grossARR: number; churnARR: number; netARR: number;
   monthlyQuota: number; attainment: number; commission: number;
@@ -19,6 +27,7 @@ interface AEMetrics {
   tboRate?: number | null;
   closedWonDeals?: DealDetail[];
   optOutDeals?: DealDetail[];
+  transcriptInsights?: TranscriptMetrics;
 }
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
@@ -586,6 +595,104 @@ export default function RepDashboard() {
             </div>
           </div>
         )}
+
+        {/* ─── Demo Insights (Fireflies Transcripts) ─────────────── */}
+        {isAE && aeM.transcriptInsights && aeM.transcriptInsights.totalAnalyzed > 0 && (() => {
+          const ti = aeM.transcriptInsights;
+          const talkPct = ti.avgTalkRatio != null ? Math.round(ti.avgTalkRatio * 100) : null;
+          const talkColor = talkPct != null
+            ? talkPct <= 50 ? B.accent : talkPct <= 60 ? B.warn : B.danger
+            : B.faint;
+          const sentTotal = ti.sentimentBreakdown.positive + ti.sentimentBreakdown.neutral + ti.sentimentBreakdown.negative;
+          const sentPctPos = sentTotal > 0 ? Math.round((ti.sentimentBreakdown.positive / sentTotal) * 100) : 0;
+          const sentPctNeu = sentTotal > 0 ? Math.round((ti.sentimentBreakdown.neutral / sentTotal) * 100) : 0;
+          const sentPctNeg = sentTotal > 0 ? 100 - sentPctPos - sentPctNeu : 0;
+
+          const fmtScore = (n: number | null) => n != null ? n.toFixed(2) : "—";
+          const fmtMin = (n: number | null) => n != null ? `${Math.round(n)}m` : "—";
+          const fmtRatio = (n: number | null) => n != null ? `${Math.round(n * 100)}%` : "—";
+
+          return (
+            <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "20px 22px", marginTop: 12, ...an("0.38s") }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>
+                  Demo Insights
+                </div>
+                <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body }}>
+                  {ti.totalAnalyzed} call{ti.totalAnalyzed !== 1 ? "s" : ""} analyzed
+                </div>
+              </div>
+
+              {/* Section A: Averages */}
+              <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                {/* Talk Ratio */}
+                <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: "#F8FAFC", border: `1px solid ${B.borderLight}`, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Talk Ratio</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: talkColor, letterSpacing: "-0.02em" }}>
+                    {talkPct != null ? `${talkPct}%` : "—"}
+                  </div>
+                  <div style={{ fontSize: 9, color: B.faint, fontFamily: F.body, marginTop: 4 }}>
+                    {talkPct != null && talkPct <= 50 ? "Good — more listening" : talkPct != null && talkPct <= 60 ? "Slightly high" : talkPct != null ? "Too much talking" : ""}
+                  </div>
+                </div>
+                {/* Avg Duration */}
+                <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: "#F8FAFC", border: `1px solid ${B.borderLight}`, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Avg Duration</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, fontFamily: F.mono, color: B.text, letterSpacing: "-0.02em" }}>
+                    {ti.avgDurationMinutes != null ? `${Math.round(ti.avgDurationMinutes)}m` : "—"}
+                  </div>
+                </div>
+                {/* Sentiment */}
+                <div style={{ flex: 1, padding: "14px 16px", borderRadius: 14, background: "#F8FAFC", border: `1px solid ${B.borderLight}`, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>Sentiment</div>
+                  <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginTop: 10, marginBottom: 6 }}>
+                    {sentPctPos > 0 && <div style={{ width: `${sentPctPos}%`, background: B.accent, transition: "width 0.5s" }} />}
+                    {sentPctNeu > 0 && <div style={{ width: `${sentPctNeu}%`, background: B.warn, transition: "width 0.5s" }} />}
+                    {sentPctNeg > 0 && <div style={{ width: `${sentPctNeg}%`, background: B.danger, transition: "width 0.5s" }} />}
+                  </div>
+                  <div style={{ fontSize: 9, color: B.faint, fontFamily: F.mono }}>
+                    {sentPctPos}% pos · {sentPctNeu}% neu · {sentPctNeg}% neg
+                  </div>
+                </div>
+              </div>
+
+              {/* Section B: Won vs Lost Comparison */}
+              {(ti.wonMetrics || ti.lostMetrics) && (
+                <>
+                  <div style={{ fontSize: 10, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, marginBottom: 10 }}>
+                    Won vs Lost Demos
+                  </div>
+                  <div style={{ borderRadius: 12, border: `1px solid ${B.borderLight}`, overflow: "hidden" }}>
+                    {/* Header row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", background: "#F8FAFC", padding: "8px 14px", borderBottom: `1px solid ${B.borderLight}` }}>
+                      <div style={{ fontSize: 9, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>Metric</div>
+                      <div style={{ fontSize: 9, color: B.accent, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, textAlign: "center" as const }}>Won</div>
+                      <div style={{ fontSize: 9, color: B.danger, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600, textAlign: "center" as const }}>Lost</div>
+                    </div>
+                    {/* Talk Ratio row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "10px 14px", borderBottom: `1px solid ${B.borderLight}` }}>
+                      <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, fontWeight: 500 }}>Talk Ratio</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.accent, textAlign: "center" as const }}>{fmtRatio(ti.wonMetrics?.avgTalkRatio ?? null)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.danger, textAlign: "center" as const }}>{fmtRatio(ti.lostMetrics?.avgTalkRatio ?? null)}</div>
+                    </div>
+                    {/* Duration row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "10px 14px", borderBottom: `1px solid ${B.borderLight}` }}>
+                      <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, fontWeight: 500 }}>Avg Duration</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.accent, textAlign: "center" as const }}>{fmtMin(ti.wonMetrics?.avgDuration ?? null)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.danger, textAlign: "center" as const }}>{fmtMin(ti.lostMetrics?.avgDuration ?? null)}</div>
+                    </div>
+                    {/* Sentiment row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "10px 14px" }}>
+                      <div style={{ fontSize: 12, color: B.muted, fontFamily: F.body, fontWeight: 500 }}>Sentiment</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.accent, textAlign: "center" as const }}>{fmtScore(ti.wonMetrics?.avgSentimentScore ?? null)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: F.mono, color: B.danger, textAlign: "center" as const }}>{fmtScore(ti.lostMetrics?.avgSentimentScore ?? null)}</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ─── Deal list modal ───────────────────────────────────── */}
         {showDeals && isAE && (

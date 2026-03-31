@@ -3,6 +3,14 @@ import { useState, useEffect, useCallback } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface DealDetail { name: string; value: number; closeDate: string; recordId?: string }
+interface TranscriptMetrics {
+  avgTalkRatio: number | null;
+  avgDurationMinutes: number | null;
+  sentimentBreakdown: { positive: number; neutral: number; negative: number };
+  wonMetrics: { avgTalkRatio: number | null; avgDuration: number | null; avgSentimentScore: number | null } | null;
+  lostMetrics: { avgTalkRatio: number | null; avgDuration: number | null; avgSentimentScore: number | null } | null;
+  totalAnalyzed: number;
+}
 interface AEResult {
   id: string; name: string; role: string; initials: string; color: string; type: "ae";
   monthlyQuota: number; annualQuota: number;
@@ -20,6 +28,7 @@ interface AEResult {
   tierBreakdown?: { label: string; amount: number }[];
   closedWonDeals?: DealDetail[];
   optOutDeals?: DealDetail[];
+  transcriptInsights?: TranscriptMetrics;
 }
 interface BDRResult {
   id: string; name: string; role: string; initials: string; color: string; type: "bdr";
@@ -717,6 +726,173 @@ function FunnelLeaderboardCard({ leaderboard }: { leaderboard: FunnelLeaderboard
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DEMO QUALITY INSIGHTS
+// ═══════════════════════════════════════════════════════════════════════════════
+function DemoQualityCard({ aeResults }: { aeResults: AEResult[] }) {
+  const aesWithInsights = aeResults.filter((ae) => ae.transcriptInsights && ae.transcriptInsights.totalAnalyzed > 0);
+  if (aesWithInsights.length === 0) return null;
+
+  const colLabel: React.CSSProperties = {
+    fontSize: 9, fontWeight: 500, color: C.textDim, fontFamily: F.b,
+    letterSpacing: "0.08em", textTransform: "uppercase",
+  };
+
+  function talkColor(ratio: number | null): string {
+    if (ratio == null) return C.textGhost;
+    const pct = ratio * 100;
+    if (pct <= 50) return C.accent;
+    if (pct <= 60) return C.warn;
+    return C.danger;
+  }
+
+  function sentLabel(ti: TranscriptMetrics): string {
+    const total = ti.sentimentBreakdown.positive + ti.sentimentBreakdown.neutral + ti.sentimentBreakdown.negative;
+    if (total === 0) return "—";
+    const pctPos = Math.round((ti.sentimentBreakdown.positive / total) * 100);
+    return `${pctPos}% pos`;
+  }
+
+  return (
+    <div style={{
+      marginTop: 12, borderRadius: 12,
+      border: `1px solid ${C.primary}25`,
+      background: C.card, overflow: "hidden",
+    }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 20px", borderBottom: `1px solid ${C.border}`,
+        background: `${C.primary}06`,
+      }}>
+        <div style={{
+          fontSize: 11, fontWeight: 600, color: C.primary,
+          fontFamily: F.b, letterSpacing: "0.08em", textTransform: "uppercase",
+        }}>
+          Demo Quality Insights
+        </div>
+        <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b }}>
+          Based on Fireflies transcripts
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "36px 1fr 72px 72px 72px 80px 80px",
+        alignItems: "center", gap: 0,
+        padding: "10px 20px 6px",
+        borderBottom: `1px solid ${C.border}`,
+      }}>
+        <div style={colLabel}>#</div>
+        <div style={colLabel}>Name</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Talk %</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Avg Dur.</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Sentiment</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Won Avg</div>
+        <div style={{ ...colLabel, textAlign: "right" }}>Lost Avg</div>
+      </div>
+
+      {/* Rows */}
+      {aesWithInsights.map((ae, i) => {
+        const ti = ae.transcriptInsights!;
+        return (
+          <div key={ae.id} style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 72px 72px 72px 80px 80px",
+            alignItems: "center", gap: 0,
+            padding: "10px 20px",
+            borderBottom: i < aesWithInsights.length - 1 ? `1px solid ${C.border}` : "none",
+          }}>
+            {/* Rank */}
+            <div style={{
+              width: 22, height: 22, borderRadius: 6,
+              background: `${C.textGhost}20`, color: C.textDim,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700, fontFamily: F.m,
+            }}>
+              {i + 1}
+            </div>
+
+            {/* Name */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: "50%",
+                background: `${ae.color}18`, border: `1.5px solid ${ae.color}40`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 700, color: ae.color, fontFamily: F.b,
+                flexShrink: 0,
+              }}>
+                {ae.initials}
+              </div>
+              <div style={{
+                fontSize: 13, fontWeight: 500, color: C.text, fontFamily: F.b,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {ae.name}
+              </div>
+            </div>
+
+            {/* Talk Ratio */}
+            <div style={{
+              fontSize: 13, fontWeight: 600, fontFamily: F.m,
+              color: talkColor(ti.avgTalkRatio), textAlign: "right",
+            }}>
+              {ti.avgTalkRatio != null ? `${Math.round(ti.avgTalkRatio * 100)}%` : "—"}
+            </div>
+
+            {/* Avg Duration */}
+            <div style={{
+              fontSize: 13, fontWeight: 500, fontFamily: F.m,
+              color: C.textSec, textAlign: "right",
+            }}>
+              {ti.avgDurationMinutes != null ? `${Math.round(ti.avgDurationMinutes)}m` : "—"}
+            </div>
+
+            {/* Sentiment */}
+            <div style={{
+              fontSize: 13, fontWeight: 500, fontFamily: F.m,
+              color: C.textSec, textAlign: "right",
+            }}>
+              {sentLabel(ti)}
+            </div>
+
+            {/* Won Avg (talk ratio) */}
+            <div style={{
+              fontSize: 13, fontWeight: 600, fontFamily: F.m,
+              color: ti.wonMetrics ? C.accentDark : C.textGhost, textAlign: "right",
+            }}>
+              {ti.wonMetrics?.avgTalkRatio != null
+                ? `${Math.round(ti.wonMetrics.avgTalkRatio * 100)}% · ${ti.wonMetrics.avgDuration != null ? Math.round(ti.wonMetrics.avgDuration) + "m" : "—"}`
+                : "—"}
+            </div>
+
+            {/* Lost Avg (talk ratio) */}
+            <div style={{
+              fontSize: 13, fontWeight: 600, fontFamily: F.m,
+              color: ti.lostMetrics ? C.dangerMuted : C.textGhost, textAlign: "right",
+            }}>
+              {ti.lostMetrics?.avgTalkRatio != null
+                ? `${Math.round(ti.lostMetrics.avgTalkRatio * 100)}% · ${ti.lostMetrics.avgDuration != null ? Math.round(ti.lostMetrics.avgDuration) + "m" : "—"}`
+                : "—"}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Summary footer */}
+      <div style={{
+        padding: "12px 20px",
+        borderTop: `1px solid ${C.border}`,
+        background: "rgba(0,0,0,0.02)",
+        fontSize: 10, color: C.textGhost, fontFamily: F.b,
+      }}>
+        {aesWithInsights.reduce((s, ae) => s + (ae.transcriptInsights?.totalAnalyzed || 0), 0)} total calls analyzed across {aesWithInsights.length} rep{aesWithInsights.length !== 1 ? "s" : ""}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // DEAL LIST MODAL
 // ═══════════════════════════════════════════════════════════════════════════════
 function ExecDealListModal({ repName, closedWonDeals, optOutDeals, onClose }: {
@@ -1018,6 +1194,11 @@ export default function ExecDashboard() {
         {/* ─── FUNNEL PROGRESSION LEADERBOARD ────────────────────────── */}
         {isLive && funnelLeaderboard && funnelLeaderboard.entries.length > 0 && (
           <FunnelLeaderboardCard leaderboard={funnelLeaderboard} />
+        )}
+
+        {/* ─── DEMO QUALITY INSIGHTS ─────────────────────────────────── */}
+        {isLive && aeResults.length > 0 && (
+          <DemoQualityCard aeResults={aeResults} />
         )}
 
         {/* ─── "Connect to see data" state ──────────────────────────── */}
