@@ -4,10 +4,10 @@
 import { attioQuery, getVal } from "@/lib/attio";
 import {
     AEConfig, BDRConfig, buildOwnerMap, getActiveAEs,
-    calcAECommission, calcBDRCommission, BDR_DATA,
+    calcAECommission, calcBDRCommission, BDR_DATA, getAEEffectiveQuota,
 } from "@/lib/commission-config";
 import { fetchScheduledDemosFromCalendly, ScheduledDemoCounts } from "@/lib/calendly";
-import { fetchHeldDemosFromFireflies, HeldDemosByRep, fetchTranscriptInsights, computeTranscriptMetrics, AETranscriptMetrics } from "@/lib/fireflies";
+import { fetchHeldDemosFromFireflies, HeldDemosByRep, fetchTranscriptInsights, computeTranscriptMetrics, AETranscriptMetrics, TranscriptInsight } from "@/lib/fireflies";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -25,6 +25,98 @@ const DEAL_PARENT_ATTR = process.env.ATTIO_DEAL_PARENT_ATTR || "associated_peopl
 const DEMO_HELD_DATE_ATTR = process.env.ATTIO_DEMO_HELD_DATE_ATTR || "demo_held_date";
 
 const PAGE_SIZE = 500;
+
+// Minimum duration (minutes) for a Fireflies transcript to count as a "held demo"
+const MIN_DEMO_DURATION_MINUTES = 12;
+
+// ─── Demo Triangulation ─────────────────────────────────────────────────────
+
+export interface VerifiedDemo {
+  date: string;           // "YYYY-MM-DD"
+  title: string;
+  source: "attio" | "fireflies" | "both";
+  durationMinutes?: number;
+}
+
+/**
+ * Triangulate demos across Attio (demo_held_date) and Fireflies transcripts.
+ * A demo is considered "held" if:
+ *   - Attio has demo_held_date for the deal, OR
+ *   - Fireflies has a transcript >= 12 min for the rep in the same date range.
+ * When both sources agree on a date, source = "both".
+ * Returns per-AE verified demo lists and any uncaptured demos (in Fireflies but not Attio).
+ */
+function triangulateDemos(
+  deals: any[],
+  transcriptsByRep: Record<string, TranscriptInsight[]>,
+  ownerMap: Record<string, string>,
+  activeAEIds: string[],
+  startISO: string,
+  endISO: string,
+): {
+  verifiedByAE: Record<string, VerifiedDemo[]>;
+  uncapturedByAE: Record<string, VerifiedDemo[]>;
+  totalUncaptured: number;
+} {
+  const verifiedByAE: Record<string, VerifiedDemo[]> = {};
+  const uncapturedByAE: Record<string, VerifiedDemo[]> = {};
+  for (const id of activeAEIds) {
+    verifiedByAE[id] = [];
+    uncapturedByAE[id] = [];
+  }
+
+  // Step 1: Collect Attio demo dates per AE
+  const attioDemoDatesByAE: Record<string, Set<string>> = {};
+  for (const id of activeAEIds) attioDemoDatesByAE[id] = new Set();
+
+  for (const deal of deals) {
+    const demoDate = getDemoHeldDate(deal);
+    if (!demoDate || demoDate < startISO || demoDate > endISO) continue;
+    const aeId = ownerMap[getVal(deal, "owner")];
+    if (!aeId || !attioDemoDatesByAE[aeId]) continue;
+    attioDemoDatesByAE[aeId].add(demoDate);
+    const dealName = getVal(deal, "name") || "Unnamed Deal";
+    verifiedByAE[aeId].push({
+      date: demoDate,
+      title: String(dealName),
+      source: "attio",
+    });
+  }
+
+  // Step 2: Cross-reference with Fireflies transcripts (>= 12 min)
+  let totalUncaptured = 0;
+  for (const aeId of activeAEIds) {
+    const transcripts = transcriptsByRep[aeId] || [];
+    const attioDates = attioDemoDatesByAE[aeId];
+
+    for (const t of transcripts) {
+      if (t.durationMinutes < MIN_DEMO_DURATION_MINUTES) continue;
+      if (t.date < startISO || t.date > endISO) continue;
+
+      if (attioDates.has(t.date)) {
+        // Upgrade existing Attio entry to "both"
+        const existing = verifiedByAE[aeId].find(
+          (d) => d.date === t.date && d.source === "attio",
+        );
+        if (existing) {
+          existing.source = "both";
+          existing.durationMinutes = t.durationMinutes;
+        }
+      } else {
+        // Fireflies-only demo — not captured in Attio
+        uncapturedByAE[aeId].push({
+          date: t.date,
+          title: t.title,
+          source: "fireflies",
+          durationMinutes: t.durationMinutes,
+        });
+        totalUncaptured++;
+      }
+    }
+  }
+
+  return { verifiedByAE, uncapturedByAE, totalUncaptured };
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -772,12 +864,14 @@ export interface MonthData {
     closedWonDeals: DealDetail[];
     optOutDeals: DealDetail[];
     transcriptInsights?: AETranscriptMetrics;
+    uncapturedDemos?: VerifiedDemo[];
   }[];
   bdrResult: {
     id: string; name: string; role: string; initials: string; color: string;
     type: "bdr"; monthlyQuota: number;
     totalMeetings: number; netMeetings: number;
     attainment: number; commission: number;
+    demoDetails?: { date: string; title: string }[];
   };
   forecast: ForecastData | null;
   funnelLeaderboard: FunnelLeaderboard | null;
@@ -993,8 +1087,9 @@ export async function fetchMonthData(
       closedLostCount: 0, closedLostARR: 0,
       optOutARR: 0, optOutCount: 0,
     };
+    const effectiveQuota = getAEEffectiveQuota(ae, selectedMonthStr);
     const { commission, attainment, tierBreakdown } = calcAECommission(
-      ae.monthlyQuota, ae.tiers, a.netARR,
+      effectiveQuota, ae.tiers, a.netARR,
     );
     const demoCount = demoCounts[ae.id] || 0;
     const cwRate = cwRates[ae.id] ?? null;
@@ -1004,7 +1099,7 @@ export async function fetchMonthData(
       id: ae.id, name: ae.name, role: ae.role,
       initials: ae.initials, color: ae.color,
       type: "ae" as const,
-      monthlyQuota: ae.monthlyQuota, annualQuota: ae.annualQuota,
+      monthlyQuota: effectiveQuota, annualQuota: ae.annualQuota,
       grossARR: a.grossARR, churnARR: a.churnARR, netARR: a.netARR,
       dealCount: a.dealCount, churnCount: a.churnCount,
       closedLostCount: a.closedLostCount, closedLostARR: a.closedLostARR,
@@ -1021,14 +1116,21 @@ export async function fetchMonthData(
       closedWonDeals: closedWonDealsByAE[ae.id] || [],
       optOutDeals: optOutData?.deals || [],
       transcriptInsights: undefined as AETranscriptMetrics | undefined,
+      uncapturedDemos: undefined as VerifiedDemo[] | undefined,
     };
   });
 
   // BDR meetings: count deals where BDR is lead_owner and demo_held_date is in this month
   let maxMeetings = 0;
+  const maxDemoDetails: { date: string; title: string }[] = [];
   for (const deal of demosInMonth) {
     const leadOwner = getVal(deal, "lead_owner");
-    if (leadOwner === process.env.ATTIO_MAX_UUID) maxMeetings += 1;
+    if (leadOwner === process.env.ATTIO_MAX_UUID) {
+      maxMeetings += 1;
+      const demoDate = getDemoHeldDate(deal) || "";
+      const dealName = getVal(deal, "name") || "Unnamed Deal";
+      maxDemoDetails.push({ date: demoDate, title: String(dealName) });
+    }
   }
 
   const {
@@ -1043,6 +1145,7 @@ export async function fetchMonthData(
     monthlyQuota: bdrMonthlyQuota,
     totalMeetings: maxMeetings, netMeetings: maxMeetings,
     attainment: bdrAttainment, commission: bdrCommission,
+    demoDetails: maxDemoDetails.sort((a, b) => a.date.localeCompare(b.date)),
   };
 
   const totalDeals = wonInMonth.length;
@@ -1162,6 +1265,30 @@ export async function fetchMonthData(
     const metrics = transcriptMetricsByAE[aeResult.id];
     if (metrics && metrics.totalAnalyzed > 0) {
       aeResult.transcriptInsights = metrics;
+    }
+  }
+
+  // ─── Demo Triangulation (Attio × Fireflies) ────────────────────────────────
+  // Cross-reference demos across sources to catch any held demos (12+ min)
+  // that aren't captured in Attio's demo_held_date field.
+  const { uncapturedByAE, totalUncaptured } = triangulateDemos(
+    allDeals,
+    transcriptsByRep,
+    OWNER_MAP,
+    activeAEs.map((ae) => ae.id),
+    startISO,
+    endISO,
+  );
+  if (totalUncaptured > 0) {
+    console.warn(
+      `[demo-triangulation] Found ${totalUncaptured} demos in Fireflies (>=${MIN_DEMO_DURATION_MINUTES}min) ` +
+      `not captured in Attio demo_held_date for ${selectedMonthStr}`,
+    );
+  }
+  for (const aeResult of aeResults) {
+    const uncaptured = uncapturedByAE[aeResult.id];
+    if (uncaptured && uncaptured.length > 0) {
+      aeResult.uncapturedDemos = uncaptured;
     }
   }
 

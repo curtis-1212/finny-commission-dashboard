@@ -16,6 +16,10 @@ export interface AEConfig {
   type: "ae";
   activeFrom?: string;
   activeTo?: string;
+  /** AE ramp schedule: [month1%, month2%, month3%] of quota.
+   *  E.g. [0.5, 0.75, 1.0] means 50% in month 1, 75% in month 2, full quota month 3+.
+   *  If omitted, AE is at full quota from their first active month. */
+  rampSchedule?: [number, number, number];
 }
 
 export interface BDRConfig {
@@ -89,6 +93,7 @@ export const AE_DATA: AEConfig[] = [
     ],
     type: "ae",
     activeFrom: "2026-02",
+    rampSchedule: [0.5, 0.75, 1.0], // 50% month 1, 75% month 2, 100% month 3+
   },
 ];
 
@@ -109,6 +114,28 @@ export function getActiveAEs(month: string): AEConfig[] {
     if (ae.activeTo && month > ae.activeTo) return false;
     return true;
   });
+}
+
+/**
+ * Get the effective monthly quota for an AE, accounting for ramp schedule.
+ * AEs with a rampSchedule get reduced quota in their first months:
+ *   Month 1: rampSchedule[0] * monthlyQuota (e.g. 50%)
+ *   Month 2: rampSchedule[1] * monthlyQuota (e.g. 75%)
+ *   Month 3+: rampSchedule[2] * monthlyQuota (e.g. 100%)
+ */
+export function getAEEffectiveQuota(ae: AEConfig, selectedMonth: string): number {
+  if (!ae.rampSchedule || !ae.activeFrom) return ae.monthlyQuota;
+
+  // Calculate tenure month (1-indexed)
+  const [selYear, selMonth] = selectedMonth.split("-").map(Number);
+  const [startYear, startMonth] = ae.activeFrom.split("-").map(Number);
+  if (!selYear || !selMonth || !startYear || !startMonth) return ae.monthlyQuota;
+
+  const tenureMonth = (selYear - startYear) * 12 + (selMonth - startMonth) + 1;
+  if (tenureMonth <= 0) return ae.monthlyQuota;
+
+  const rampIdx = Math.min(tenureMonth - 1, 2); // 0, 1, or 2
+  return ae.monthlyQuota * ae.rampSchedule[rampIdx];
 }
 
 export function calcAECommission(

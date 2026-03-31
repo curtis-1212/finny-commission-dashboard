@@ -91,9 +91,15 @@ export async function fetchScheduledDemosFromCalendly(
     return counts;
   }
 
-  // Calendly uses ISO 8601 timestamps. afterISO is exclusive (start of next day),
-  // endISO is inclusive (so we go to end of that day).
-  const minTime = new Date(afterISO + "T23:59:59Z").toISOString();
+  // Calendly uses ISO 8601 timestamps.
+  // Use the current time as minTime so we capture today's remaining demos.
+  // Previously we used afterISO + "T23:59:59Z" which skipped all of today's
+  // demos and produced a zero-width window on the last day of the month.
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  const minTime = afterISO <= todayStr
+    ? now.toISOString()                                    // from now (includes today's upcoming demos)
+    : new Date(afterISO + "T00:00:00Z").toISOString();     // future date: start of that day
   const maxTime = new Date(endISO + "T23:59:59Z").toISOString();
 
   const events = await fetchCalendlyEvents(minTime, maxTime);
