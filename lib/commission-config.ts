@@ -97,6 +97,31 @@ export const AE_DATA: AEConfig[] = [
   },
 ];
 
+export interface AERampInfo {
+  rampFactor: number;      // 0.5, 0.75, or 1.0
+  rampMonth: number | null; // 1, 2, 3, or null if not ramping
+  isRamping: boolean;
+}
+
+export function getAERampInfo(ae: AEConfig, selectedMonth: string): AERampInfo {
+  if (!ae.rampSchedule || !ae.activeFrom) {
+    return { rampFactor: 1.0, rampMonth: null, isRamping: false };
+  }
+  const [selYear, selMonth] = selectedMonth.split("-").map(Number);
+  const [startYear, startMonth] = ae.activeFrom.split("-").map(Number);
+  if (!selYear || !selMonth || !startYear || !startMonth) {
+    return { rampFactor: 1.0, rampMonth: null, isRamping: false };
+  }
+  const tenureMonth = (selYear - startYear) * 12 + (selMonth - startMonth) + 1;
+  if (tenureMonth <= 0) {
+    return { rampFactor: 0, rampMonth: null, isRamping: false };
+  }
+  const rampIdx = Math.min(tenureMonth - 1, 2); // 0, 1, or 2
+  const rampFactor = ae.rampSchedule[rampIdx];
+  const isRamping = rampFactor < 1.0;
+  return { rampFactor, rampMonth: tenureMonth <= 3 ? tenureMonth : null, isRamping };
+}
+
 export const BDR_DATA: BDRConfig = {
   id: "max", name: "Max Zajec", role: "Founding BDR",
   initials: "MZ", color: "#8B5CF6", email: "max@finny.com",
@@ -141,24 +166,39 @@ export function getAEEffectiveQuota(ae: AEConfig, selectedMonth: string): number
 export function calcAECommission(
   quota: number,
   tiers: { label?: string; ceiling: number; rate: number }[],
-  netARR: number
+  netARR: number,
+  rampFactor?: number,
 ) {
-  const attainment = quota > 0 ? netARR / quota : 0;
+  // Apply ramp factor: scales down the effective quota and tier ceilings proportionally
+  const effectiveQuota = rampFactor != null && rampFactor < 1
+    ? quota * rampFactor
+    : quota;
+  const attainment = effectiveQuota > 0 ? netARR / effectiveQuota : 0;
+
+  // Scale tier ceilings proportionally when ramping
+  const effectiveTiers = rampFactor != null && rampFactor < 1
+    ? tiers.map((t) => ({
+        ...t,
+        ceiling: t.ceiling === Infinity ? Infinity : t.ceiling,
+        // Tier rates apply at the same percentages of the ramped quota
+      }))
+    : tiers;
+
   let commission = 0;
   const tierBreakdown: { label?: string; ceiling: number; rate: number; amount: number }[] = [];
-  for (let i = 0; i < tiers.length; i++) {
-    const prevCeiling = i === 0 ? 0 : tiers[i - 1].ceiling;
+  for (let i = 0; i < effectiveTiers.length; i++) {
+    const prevCeiling = i === 0 ? 0 : effectiveTiers[i - 1].ceiling;
     if (attainment <= prevCeiling) {
-      tierBreakdown.push({ ...tiers[i], amount: 0 });
+      tierBreakdown.push({ ...effectiveTiers[i], amount: 0 });
       continue;
     }
-    const cappedAttainment = Math.min(attainment, tiers[i].ceiling);
-    const tierCommission = (cappedAttainment - prevCeiling) * quota * tiers[i].rate;
+    const cappedAttainment = Math.min(attainment, effectiveTiers[i].ceiling);
+    const tierCommission = (cappedAttainment - prevCeiling) * effectiveQuota * effectiveTiers[i].rate;
     commission += tierCommission;
-    tierBreakdown.push({ ...tiers[i], amount: tierCommission });
+    tierBreakdown.push({ ...effectiveTiers[i], amount: tierCommission });
   }
   commission = Math.max(0, commission);
-  return { commission, attainment, tierBreakdown };
+  return { commission, attainment, tierBreakdown, effectiveQuota };
 }
 
 function getBdrTenureMonth(bdr: BDRConfig, selectedMonth: string): number {

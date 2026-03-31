@@ -122,3 +122,55 @@ export async function fetchScheduledDemosFromCalendly(
 
   return counts;
 }
+
+/**
+ * Fetch past Calendly events (already occurred) for triangulation.
+ * Returns event details per rep for cross-referencing with Fireflies/Attio.
+ */
+export interface CalendlyPastEvent {
+  date: string;     // "YYYY-MM-DD"
+  title: string;
+  repEmail: string;
+}
+
+export interface CalendlyPastEventsByRep {
+  [repId: string]: CalendlyPastEvent[];
+}
+
+export async function fetchPastCalendlyEvents(
+  reps: { id: string; email: string }[],
+  startISO: string,
+  endISO: string,
+): Promise<CalendlyPastEventsByRep> {
+  const result: CalendlyPastEventsByRep = {};
+  for (const rep of reps) result[rep.id] = [];
+
+  if (!process.env.CALENDLY_API_TOKEN || !process.env.CALENDLY_ORG_URI) {
+    return result;
+  }
+
+  const minTime = new Date(startISO + "T00:00:00Z").toISOString();
+  const maxTime = new Date(endISO + "T23:59:59Z").toISOString();
+
+  const events = await fetchCalendlyEvents(minTime, maxTime);
+
+  const emailToId: Record<string, string> = {};
+  for (const rep of reps) emailToId[rep.email.toLowerCase()] = rep.id;
+
+  for (const event of events) {
+    const dateStr = event.start_time.slice(0, 10);
+    for (const membership of event.event_memberships) {
+      const repId = emailToId[membership.user_email.toLowerCase()];
+      if (repId !== undefined) {
+        result[repId].push({
+          date: dateStr,
+          title: event.name,
+          repEmail: membership.user_email.toLowerCase(),
+        });
+        break;
+      }
+    }
+  }
+
+  return result;
+}
