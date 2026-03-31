@@ -17,6 +17,10 @@ interface TranscriptMetrics {
 interface AEMetrics {
   grossARR: number; churnARR: number; netARR: number;
   monthlyQuota: number; attainment: number; commission: number;
+  fullQuota?: number;
+  rampFactor?: number;
+  rampMonth?: number | null;
+  isRamping?: boolean;
   tierBreakdown?: { label: string; amount: number }[];
   introCallsScheduled: number;
   toBeOnboarded: StageCount; closedWon: StageCount;
@@ -32,6 +36,7 @@ interface AEMetrics {
 interface BDRMetrics {
   netMeetings: number; monthlyTarget: number; attainment: number;
   commission: number; introCallsScheduled: number;
+  demoDetails?: { name: string; date: string }[];
 }
 interface MonthOption { value: string; label: string }
 interface LeaderboardEntry { id: string; name: string; initials: string; color: string; netARR: number; }
@@ -501,6 +506,26 @@ export default function RepDashboard() {
           </div>
         </div>
 
+        {/* ─── Ramp Callout ──────────────────────────────────────── */}
+        {isAE && aeM.isRamping && aeM.rampMonth != null && (
+          <div style={{
+            background: "#F0EFFF", border: `1px solid #6665E130`,
+            borderRadius: 16, padding: "14px 20px", marginTop: 10,
+            display: "flex", alignItems: "center", gap: 10, ...an("0.18s"),
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 700, fontFamily: F.body,
+              color: "#6665E1", background: "#EEEEFF",
+              padding: "3px 10px", borderRadius: 8,
+            }}>
+              Ramp Month {aeM.rampMonth}/3
+            </span>
+            <span style={{ fontSize: 12, color: "#5A5A6A", fontFamily: F.body }}>
+              {Math.round((aeM.rampFactor || 1) * 100)}% quota target ({fmt(aeM.monthlyQuota)}{aeM.fullQuota ? ` of ${fmt(aeM.fullQuota)}` : ""})
+            </span>
+          </div>
+        )}
+
         {/* ─── Commission ─────────────────────────────────────────── */}
         <div style={{
           background: `linear-gradient(135deg, ${B.primary}, ${B.primaryLight})`,
@@ -569,6 +594,35 @@ export default function RepDashboard() {
             </>
           )}
         </div>
+
+        {/* ─── BDR Demos Held List ──────────────────────────────── */}
+        {!isAE && bdrM.demoDetails && bdrM.demoDetails.length > 0 && (
+          <div style={{ background: B.card, borderRadius: 20, border: `1px solid ${B.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.03), 0 4px 16px rgba(0,0,0,.02)", padding: "8px 22px 6px", marginTop: 12, ...an("0.34s") }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 0 6px" }}>
+              <div style={{ fontSize: 11, color: B.faint, fontFamily: F.body, letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 600 }}>
+                Demos Held ({bdrM.demoDetails.length})
+              </div>
+            </div>
+            {bdrM.demoDetails.map((d, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "12px 0",
+                borderBottom: i < (bdrM.demoDetails?.length || 0) - 1 ? `1px solid ${B.borderLight}` : "none",
+              }}>
+                <div style={{
+                  fontSize: 14, fontWeight: 500, color: B.text, fontFamily: F.body,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+                  flex: 1, marginRight: 12,
+                }}>
+                  {d.name}
+                </div>
+                <div style={{ fontSize: 12, color: B.faint, fontFamily: F.mono, flexShrink: 0 }}>
+                  {d.date}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ─── Close Rates ───────────────────────────────────────── */}
         {isAE && aeM.demoCount != null && aeM.demoCount > 0 && (
