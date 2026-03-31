@@ -33,6 +33,10 @@ interface AEResult {
   closedWonDeals?: DealDetail[];
   optOutDeals?: DealDetail[];
   transcriptInsights?: TranscriptMetrics;
+  uncapturedDemos?: VerifiedDemo[];
+}
+interface VerifiedDemo {
+  date: string; title: string; source: "attio" | "fireflies" | "both"; durationMinutes?: number;
 }
 interface BDRResult {
   id: string; name: string; role: string; initials: string; color: string; type: "bdr";
@@ -247,9 +251,11 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
         {/* Metrics row */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
           {/* Net ARR / Meetings */}
-          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50, position: "relative" }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Mtgs" : "Net ARR"}</div>
-            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em" }}>
+            <div style={{
+              fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em",
+            }}>
               {isBDR ? actual : fmtK(actual)}
             </div>
           </div>
@@ -802,16 +808,16 @@ function FunnelLeaderboardCard({ leaderboard }: { leaderboard: FunnelLeaderboard
         );
       })}
 
-      {/* Score footnote */}
+      {/* Scoring footnote */}
       <div style={{
         padding: "10px 20px 14px",
-        fontSize: 10,
-        color: C.textGhost,
-        fontFamily: F.b,
-        fontStyle: "italic",
         borderTop: `1px solid ${C.border}`,
+        background: "rgba(0,0,0,0.02)",
+        fontSize: 10, color: C.textGhost, fontFamily: F.b,
+        fontStyle: "italic",
+        lineHeight: 1.6,
       }}>
-        Score = 45% Close-Won Rate + 20% TBO Rate + 35% Speed, where Speed = 1 − (Avg Days to Close / 60)
+        Score = CW% x 0.45 + TBO% x 0.20 + Speed x 0.35 — where Speed = max(0, 1 - AvgDays/60). Higher is better.
       </div>
     </div>
   );
@@ -1300,6 +1306,45 @@ export default function ExecDashboard() {
             totalQuota={totalQuota}
           />
         )}
+
+        {/* ─── UNCAPTURED DEMOS ALERT ────────────────────────────────── */}
+        {isLive && (() => {
+          const uncaptured = aeResults.flatMap((ae) =>
+            (ae.uncapturedDemos || []).map((d) => ({ ...d, aeName: ae.name })),
+          );
+          if (uncaptured.length === 0) return null;
+          return (
+            <div style={{
+              marginTop: 12, borderRadius: 12,
+              border: `1px solid ${C.warn}30`,
+              background: `${C.warn}08`,
+              padding: "14px 20px",
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: C.warnMuted,
+                fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const,
+                marginBottom: 8,
+              }}>
+                Uncaptured Demos — {uncaptured.length} meeting{uncaptured.length !== 1 ? "s" : ""} found in Fireflies but missing from Attio
+              </div>
+              <div style={{ fontSize: 11, color: C.textSec, fontFamily: F.b, lineHeight: 1.7 }}>
+                {uncaptured.map((d, i) => (
+                  <div key={i}>
+                    <span style={{ fontWeight: 600 }}>{d.aeName}</span>
+                    {" — "}
+                    {d.date}: {d.title}
+                    {d.durationMinutes != null && (
+                      <span style={{ color: C.textGhost }}> ({d.durationMinutes}min)</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: C.textGhost, fontFamily: F.b, marginTop: 8 }}>
+                These are Fireflies transcripts of 12+ minutes that have no matching demo_held_date in Attio. Update Attio to ensure accurate tracking.
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ─── FUNNEL PROGRESSION LEADERBOARD ────────────────────────── */}
         {isLive && funnelLeaderboard && funnelLeaderboard.entries.length > 0 && (

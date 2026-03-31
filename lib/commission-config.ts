@@ -16,7 +16,12 @@ export interface AEConfig {
   type: "ae";
   activeFrom?: string;
   activeTo?: string;
-  startDate?: string;  // ISO "YYYY-MM-DD" — triggers ramp quota (50%/75%/100% for months 1/2/3)
+  /** AE ramp schedule: [month1%, month2%, month3%] of quota.
+   *  E.g. [0.5, 0.75, 1.0] means 50% in month 1, 75% in month 2, full quota month 3+.
+   *  If omitted, AE is at full quota from their first active month. */
+  rampSchedule?: [number, number, number];
+  /** Override ramp start month (e.g. "2026-03"). Defaults to activeFrom if omitted. */
+  rampFrom?: string;
 }
 
 export interface BDRConfig {
@@ -90,13 +95,10 @@ export const AE_DATA: AEConfig[] = [
     ],
     type: "ae",
     activeFrom: "2026-02",
-    startDate: "2026-02-01",
+    rampFrom: "2026-03",  // March = month 1 of ramp
+    rampSchedule: [0.5, 0.75, 1.0], // 50% month 1, 75% month 2, 100% month 3+
   },
 ];
-
-// ─── AE Ramp Factors ───────────────────────────────────────────────────────
-// New AEs ramp to full quota over 3 months: 50% → 75% → 100%
-export const AE_RAMP_FACTORS: [number, number, number] = [0.50, 0.75, 1.0];
 
 export interface AERampInfo {
   rampFactor: number;      // 0.5, 0.75, or 1.0
@@ -105,21 +107,27 @@ export interface AERampInfo {
 }
 
 export function getAERampInfo(ae: AEConfig, selectedMonth: string): AERampInfo {
-  if (!ae.startDate) {
+  if (!ae.rampSchedule) {
     return { rampFactor: 1.0, rampMonth: null, isRamping: false };
   }
-  const [startYear, startMonth] = ae.startDate.split("-").map(Number);
+  const rampStart = ae.rampFrom || ae.activeFrom;
+  if (!rampStart) {
+    return { rampFactor: 1.0, rampMonth: null, isRamping: false };
+  }
   const [selYear, selMonth] = selectedMonth.split("-").map(Number);
-  if (!startYear || !startMonth || !selYear || !selMonth) {
+  const [startYear, startMonth] = rampStart.split("-").map(Number);
+  if (!selYear || !selMonth || !startYear || !startMonth) {
     return { rampFactor: 1.0, rampMonth: null, isRamping: false };
   }
   const tenureMonth = (selYear - startYear) * 12 + (selMonth - startMonth) + 1;
   if (tenureMonth <= 0) {
-    return { rampFactor: 0, rampMonth: null, isRamping: false };
+    // Before ramp start — full quota (e.g. Roy in Feb before March ramp)
+    return { rampFactor: 1.0, rampMonth: null, isRamping: false };
   }
-  if (tenureMonth === 1) return { rampFactor: AE_RAMP_FACTORS[0], rampMonth: 1, isRamping: true };
-  if (tenureMonth === 2) return { rampFactor: AE_RAMP_FACTORS[1], rampMonth: 2, isRamping: true };
-  return { rampFactor: AE_RAMP_FACTORS[2], rampMonth: tenureMonth <= 3 ? 3 : null, isRamping: false };
+  const rampIdx = Math.min(tenureMonth - 1, 2); // 0, 1, or 2
+  const rampFactor = ae.rampSchedule[rampIdx];
+  const isRamping = rampFactor < 1.0;
+  return { rampFactor, rampMonth: tenureMonth <= 3 ? tenureMonth : null, isRamping };
 }
 
 export const BDR_DATA: BDRConfig = {
@@ -139,6 +147,28 @@ export function getActiveAEs(month: string): AEConfig[] {
     if (ae.activeTo && month > ae.activeTo) return false;
     return true;
   });
+}
+
+/**
+ * Get the effective monthly quota for an AE, accounting for ramp schedule.
+ * AEs with a rampSchedule get reduced quota in their first months:
+ *   Month 1: rampSchedule[0] * monthlyQuota (e.g. 50%)
+ *   Month 2: rampSchedule[1] * monthlyQuota (e.g. 75%)
+ *   Month 3+: rampSchedule[2] * monthlyQuota (e.g. 100%)
+ */
+export function getAEEffectiveQuota(ae: AEConfig, selectedMonth: string): number {
+  if (!ae.rampSchedule || !ae.activeFrom) return ae.monthlyQuota;
+
+  // Calculate tenure month (1-indexed)
+  const [selYear, selMonth] = selectedMonth.split("-").map(Number);
+  const [startYear, startMonth] = ae.activeFrom.split("-").map(Number);
+  if (!selYear || !selMonth || !startYear || !startMonth) return ae.monthlyQuota;
+
+  const tenureMonth = (selYear - startYear) * 12 + (selMonth - startMonth) + 1;
+  if (tenureMonth <= 0) return ae.monthlyQuota;
+
+  const rampIdx = Math.min(tenureMonth - 1, 2); // 0, 1, or 2
+  return ae.monthlyQuota * ae.rampSchedule[rampIdx];
 }
 
 export function calcAECommission(
