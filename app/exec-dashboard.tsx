@@ -9,6 +9,7 @@ interface AEResult {
   grossARR?: number; churnARR?: number; netARR?: number;
   dealCount?: number; churnCount?: number; excludedCount?: number;
   demoCount?: number;
+  introCallCount?: number;
   optOutARR?: number; optOutCount?: number;
   cwRate?: number | null;
   tboRate?: number | null;
@@ -130,16 +131,16 @@ function getExpectedPace(selectedMonth: string): number | null {
 // When pace is provided (current month), compares attainment to expected pace.
 function attColor(att: number, pace?: number | null): string {
   const threshold = pace ?? 1.0;
-  if (att >= threshold)           return C.accent;
-  if (att >= threshold * 0.8)     return C.text;
-  if (att >= threshold * 0.6)     return C.warn;
-  return C.danger;
+  const ratio = att / threshold;
+  if (ratio >= 0.67)  return C.accent;   // green — on track
+  if (ratio >= 0.33)  return C.warn;     // yellow — getting there
+  return C.danger;                       // red — needs attention
 }
 function attBg(att: number, pace?: number | null): string {
   const threshold = pace ?? 1.0;
-  if (att >= threshold)           return `${C.accent}18`;
-  if (att >= threshold * 0.8)     return "transparent";
-  if (att >= threshold * 0.6)     return `${C.warn}12`;
+  const ratio = att / threshold;
+  if (ratio >= 0.67)  return `${C.accent}18`;
+  if (ratio >= 0.33)  return `${C.warn}12`;
   return `${C.danger}12`;
 }
 
@@ -180,10 +181,10 @@ function KPI({ label, value, sub, accent, large }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAN VS ACTUAL BAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick, forecastARR }: {
+function PlanBar({ name, initials, actual, grossARR, quota, att, commission, deals, type, demoCount, introCallCount, cwRate, tboRate, priorCwRate, priorTboRate, cwRateLabel, optOutARR, optOutCount, pace, onClick, forecastARR }: {
   name: string; initials: string; actual: number; grossARR?: number; quota: number;
   att: number; commission: number; deals: number; type: string;
-  demoCount?: number; cwRate?: number | null; tboRate?: number | null;
+  demoCount?: number; introCallCount?: number; cwRate?: number | null; tboRate?: number | null;
   priorCwRate?: number | null; priorTboRate?: number | null;
   cwRateLabel?: string;
   optOutARR?: number; optOutCount?: number;
@@ -193,13 +194,12 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 }) {
   const pct = Math.min(att, 1.5);
   const threshold = pace ?? 1.0;
-  const barColor = att >= threshold
-    ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`
-    : att >= threshold * 0.8
-      ? `linear-gradient(90deg, ${C.primary}, ${C.primaryLight})`
-      : att >= threshold * 0.6
-        ? `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})`
-        : `linear-gradient(90deg, ${C.danger}, ${C.dangerMuted})`;
+  const ratio = att / threshold; // how far toward pace
+  const barColor = ratio >= 0.67
+    ? `linear-gradient(90deg, ${C.primary}, ${C.accent})`   // green — on track
+    : ratio >= 0.33
+      ? `linear-gradient(90deg, ${C.warn}, ${C.warnMuted})` // yellow — getting there
+      : `linear-gradient(90deg, ${C.danger}, ${C.dangerMuted})`; // red — needs attention
 
   const isBDR = type === "bdr";
 
@@ -267,6 +267,21 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
             <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>{isBDR ? quota : deals}</div>
           </div>
 
+          {/* Calls / Close */}
+          {!isBDR && (
+            <div style={{ flex: "0.8 1 55px", textAlign: "right" as const, minWidth: 45 }}
+              title={introCallCount != null ? `${introCallCount} intro calls, ${deals} closes` : ""}>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Calls/Close</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec }}>
+                {deals > 0 && introCallCount != null ? (introCallCount / deals).toFixed(1) : "—"}
+              </div>
+              {introCallCount != null && introCallCount > 0 && (
+                <div style={{ fontSize: 9, color: C.textGhost, fontFamily: F.m, marginTop: 1 }}>
+                  {introCallCount} call{introCallCount !== 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* TBO Rate */}
           {!isBDR && (
@@ -1247,6 +1262,7 @@ export default function ExecDashboard() {
                 commission={ae.commission || 0}
                 deals={ae.dealCount || 0}
                 demoCount={ae.demoCount || 0}
+                introCallCount={ae.introCallCount || 0}
                 cwRate={ae.cwRate}
                 tboRate={ae.tboRate}
                 priorCwRate={ae.priorCwRate}
