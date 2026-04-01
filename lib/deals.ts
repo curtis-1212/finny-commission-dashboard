@@ -744,6 +744,7 @@ function computeFunnelLeaderboard(
   ownerMap: Record<string, string>,
   cwPersonIds: Set<string>,
   tboPersonIds: Set<string>,
+  confirmedDemos?: ConfirmedDemosByRep,
 ): FunnelLeaderboard {
   const todayISO = new Date().toISOString().split("T")[0];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -767,6 +768,16 @@ function computeFunnelLeaderboard(
     demoCountByAE[aeId]++;
     for (const pid of getDealPersonIds(deal)) {
       demoPeopleByAE[aeId].add(pid);
+    }
+  }
+
+  // Override demo counts with triangulated data when available
+  if (confirmedDemos) {
+    for (const ae of activeAEs) {
+      const confirmed = confirmedDemos[ae.id];
+      if (confirmed && confirmed.length > 0) {
+        demoCountByAE[ae.id] = confirmed.length;
+      }
     }
   }
 
@@ -1036,14 +1047,52 @@ export async function fetchMonthData(
     for (const pid of getDealPersonIds(deal)) tboPersonIds.add(pid);
   }
 
+  // ─── Triangulated Demo Counts (Calendly + Fireflies + Attio) ────────────
+  // Fetch Calendly + Fireflies data for the selected month to get accurate demo counts
+  // instead of relying solely on Attio's demo_held_date field.
+  const triangulationReps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
+  triangulationReps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
+
+  const [monthCalendlyEvents, monthFirefliesDemos] = await Promise.all([
+    fetchPastCalendlyEvents(triangulationReps, startISO, endISO),
+    fetchHeldDemosFromFireflies(triangulationReps, startISO, endISO),
+  ]);
+
+  // Build Attio demo data for selected month
+  const monthAttioDemos: AttioDemosByRep = {};
+  for (const rep of triangulationReps) monthAttioDemos[rep.id] = [];
+  for (const deal of allDeals) {
+    const demoDate = getDemoHeldDate(deal);
+    if (!demoDate || demoDate < startISO || demoDate > endISO) continue;
+    const aeId = OWNER_MAP[getVal(deal, "owner")];
+    if (aeId && monthAttioDemos[aeId]) {
+      monthAttioDemos[aeId].push({
+        date: demoDate,
+        dealName: String(getVal(deal, "name") || "Unnamed Deal"),
+      });
+    }
+  }
+
+  const monthConfirmedDemos = triangulateHeldDemos(
+    monthCalendlyEvents, monthFirefliesDemos, monthAttioDemos,
+  );
+
   // Helper: compute cohort conversion rates for demos held in [rangeStart, rangeEnd]
-  function computeCohortRates(rangeStart: string, rangeEnd: string) {
+  // Uses triangulated demo counts (Calendly + Fireflies + Attio) as the denominator
+  // but still uses Attio deal person IDs for matching conversions.
+  function computeCohortRates(
+    rangeStart: string,
+    rangeEnd: string,
+    confirmedDemos?: ConfirmedDemosByRep,
+  ) {
+    const demoPeopleByAE: Record<string, Set<string>> = {};
+    for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
+
+    // Collect person IDs from Attio deals with demo_held_date (for conversion matching)
     const demos = allDeals.filter((deal: any) => {
       const d = getDemoHeldDate(deal);
       return d && d >= rangeStart && d <= rangeEnd;
     });
-    const demoPeopleByAE: Record<string, Set<string>> = {};
-    for (const ae of activeAEs) demoPeopleByAE[ae.id] = new Set();
     for (const deal of demos) {
       const aeId = OWNER_MAP[getVal(deal, "owner")];
       if (!aeId || !demoPeopleByAE[aeId]) continue;
@@ -1051,12 +1100,18 @@ export async function fetchMonthData(
         demoPeopleByAE[aeId].add(pid);
       }
     }
+
+    // Use triangulated counts as the denominator when available
     const counts: Record<string, number> = {};
     const cw: Record<string, number | null> = {};
     const tbo: Record<string, number | null> = {};
     for (const ae of activeAEs) {
       const people = demoPeopleByAE[ae.id];
-      const cnt = people.size;
+      // Triangulated count (from Calendly + Fireflies + Attio) is more accurate
+      const triangulatedCount = confirmedDemos?.[ae.id]?.length;
+      const cnt = triangulatedCount != null && triangulatedCount > 0
+        ? triangulatedCount
+        : people.size;
       counts[ae.id] = cnt;
       if (cnt === 0) { cw[ae.id] = null; tbo[ae.id] = null; continue; }
       let cwC = 0, tboC = 0;
@@ -1070,10 +1125,10 @@ export async function fetchMonthData(
     return { demoCounts: counts, cwRates: cw, tboRates: tbo };
   }
 
-  // Current month rates
-  const { demoCounts, cwRates, tboRates } = computeCohortRates(startISO, endISO);
+  // Current month rates (with triangulation)
+  const { demoCounts, cwRates, tboRates } = computeCohortRates(startISO, endISO, monthConfirmedDemos);
 
-  // Prior month rates (same cohort logic, previous calendar month)
+  // Prior month rates (no triangulation — would need separate fetch; keep Attio-only for now)
   const priorStartISO = churnWindowStart; // already computed above
   const priorEndISO = churnWindowEnd;
   const { demoCounts: priorDemoCounts, cwRates: priorCwRates, tboRates: priorTboRates } = computeCohortRates(priorStartISO, priorEndISO);
@@ -1173,36 +1228,34 @@ export async function fetchMonthData(
     const todayISO = new Date().toISOString().split("T")[0];
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
       .toISOString().split("T")[0];
-    const reps = activeAEs.map((ae) => ({ id: ae.id, email: ae.email }));
-    reps.push({ id: BDR_DATA.id, email: BDR_DATA.email });
 
-    // Fetch Calendly bookings + Fireflies held demos + past Calendly events in parallel
-    const [scheduledDemoCounts, heldDemosByRep, pastCalendlyEvents] = await Promise.all([
-      fetchScheduledDemosFromCalendly(reps, todayISO, endISO),
-      fetchHeldDemosFromFireflies(reps, sixtyDaysAgo, todayISO),
-      fetchPastCalendlyEvents(reps, sixtyDaysAgo, todayISO),
+    // Fetch scheduled Calendly bookings (future) + trailing 60-day data for forecast CW rate
+    const [scheduledDemoCounts, forecastFireflies, forecastCalendly] = await Promise.all([
+      fetchScheduledDemosFromCalendly(triangulationReps, todayISO, endISO),
+      fetchHeldDemosFromFireflies(triangulationReps, sixtyDaysAgo, todayISO),
+      fetchPastCalendlyEvents(triangulationReps, sixtyDaysAgo, todayISO),
     ]);
 
-    // Build Attio demo data for triangulation
-    const attioDemosByRep: AttioDemosByRep = {};
-    for (const rep of reps) attioDemosByRep[rep.id] = [];
+    // Build Attio demo data for 60-day forecast window
+    const forecastAttioDemos: AttioDemosByRep = {};
+    for (const rep of triangulationReps) forecastAttioDemos[rep.id] = [];
     for (const deal of allDeals) {
       const demoDate = getDemoHeldDate(deal);
       if (!demoDate || demoDate < sixtyDaysAgo || demoDate > todayISO) continue;
       const aeId = OWNER_MAP[getVal(deal, "owner")];
-      if (aeId && attioDemosByRep[aeId]) {
-        attioDemosByRep[aeId].push({
+      if (aeId && forecastAttioDemos[aeId]) {
+        forecastAttioDemos[aeId].push({
           date: demoDate,
           dealName: String(getVal(deal, "name") || "Unnamed Deal"),
         });
       }
     }
 
-    // Triangulate across sources
-    const confirmedDemos = triangulateHeldDemos(
-      pastCalendlyEvents, heldDemosByRep, attioDemosByRep,
+    // Triangulate across sources for forecast window
+    const forecastConfirmedDemos = triangulateHeldDemos(
+      forecastCalendly, forecastFireflies, forecastAttioDemos,
     );
-    const triangulatedHeldDemos = confirmedToHeldFormat(confirmedDemos);
+    const triangulatedHeldDemos = confirmedToHeldFormat(forecastConfirmedDemos);
 
     forecast = computeForecast(
       allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, endISO,
@@ -1213,6 +1266,7 @@ export async function fetchMonthData(
   // ─── Funnel Progression Leaderboard (always computed, trailing 30 days) ──
   const funnelLeaderboard = computeFunnelLeaderboard(
     allDeals, closedWonDeals, activeAEs, OWNER_MAP, cwPersonIds, tboPersonIds,
+    monthConfirmedDemos,
   );
 
   // ─── Transcript Insights (Fireflies) ───────────────────────────────────────
