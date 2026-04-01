@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
 
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
-  const publicRoutes = ["/login", "/api/auth", "/api/cron/"];
+  const publicRoutes = ["/login", "/api/auth", "/api/cron/", "/api/slack/"];
   const isPublicRoute = publicRoutes.some((route) =>
     request.nextUrl.pathname.startsWith(route)
   );
