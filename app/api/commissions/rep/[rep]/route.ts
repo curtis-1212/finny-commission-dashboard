@@ -66,7 +66,13 @@ export async function GET(
 
     const wonInMonth = filterByMonth(closedWonAll);
     const lostInMonth = filterByMonth(closedLostAll);
-    const introInMonth = filterByMonth(introCallAll);
+    // Intro Call deals don't have close_date — use created_at instead
+    const introInMonth = introCallAll.filter((deal: any) => {
+      const raw = getVal(deal, "created_at") || deal?.id?.created_at;
+      if (!raw) return false;
+      const d = String(raw).slice(0, 10);
+      return d >= startISO && d <= endISO;
+    });
 
     // Build churn aggregation from Users list → deals → AEs
     const activeAEs = getActiveAEs(selectedMonth);
@@ -229,30 +235,45 @@ export async function GET(
       [{ id: ae.id, email: ae.email }], startISO, endISO,
     );
     const insights = transcriptsByRep[ae.id] || [];
-    // Tag outcomes by matching transcript date to deals with demo_held_date
+    // Build stage lookup sets by deal record ID
+    const cwDealIds = new Set<string>();
+    for (const deal of closedWonAll) {
+      const rid = deal?.id?.record_id;
+      if (rid) cwDealIds.add(rid);
+    }
+    const clDealIds = new Set<string>();
+    for (const deal of closedLostAll) {
+      const rid = deal?.id?.record_id;
+      if (rid) clDealIds.add(rid);
+    }
+
+    // Tag outcomes: match each transcript to a single deal, check that deal's stage
     for (const insight of insights) {
       const matchingDeals = allDeals.filter((deal: any) => {
         const d = getDemoHeldDate(deal);
         if (!d || d !== insight.date) return false;
         return OWNER_MAP[getVal(deal, "owner")] === ae.id;
       });
-      if (matchingDeals.length > 0) {
-        let isWon = false, isLost = false;
-        for (const deal of matchingDeals) {
-          for (const pid of getDealPersonIds(deal)) {
-            if (cwPersonIds.has(pid)) isWon = true;
-          }
+      // Pick a single best-match deal: prefer title match, else first
+      let bestDeal: any = null;
+      if (matchingDeals.length === 1) {
+        bestDeal = matchingDeals[0];
+      } else if (matchingDeals.length > 1) {
+        const titleLower = (insight.title || "").toLowerCase();
+        bestDeal = matchingDeals.find((d: any) => {
+          const dealName = String(getVal(d, "name") || "").toLowerCase();
+          return dealName && titleLower.includes(dealName);
+        }) || matchingDeals[0];
+      }
+      if (bestDeal) {
+        const rid = bestDeal?.id?.record_id;
+        if (rid && cwDealIds.has(rid)) {
+          insight.outcome = "won";
+        } else if (rid && clDealIds.has(rid)) {
+          insight.outcome = "lost";
+        } else {
+          insight.outcome = "pending";
         }
-        if (!isWon) {
-          for (const deal of matchingDeals) {
-            for (const pid of getDealPersonIds(deal)) {
-              const inLost = closedLostAll.some((ld: any) =>
-                getDealPersonIds(ld).includes(pid));
-              if (inLost) isLost = true;
-            }
-          }
-        }
-        insight.outcome = isWon ? "won" : isLost ? "lost" : "pending";
       }
     }
     const transcriptInsights = computeTranscriptMetrics(insights);

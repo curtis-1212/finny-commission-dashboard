@@ -1112,46 +1112,49 @@ export async function fetchMonthData(
     }
   }
 
+  // Build lookup sets for deal record IDs by stage for fast outcome checking
+  const cwDealRecordIds = new Set<string>();
+  for (const deal of closedWonDeals) {
+    const rid = deal?.id?.record_id;
+    if (rid) cwDealRecordIds.add(rid);
+  }
+  const clDealRecordIds = new Set<string>();
+  for (const deal of closedLostDeals) {
+    const rid = deal?.id?.record_id;
+    if (rid) clDealRecordIds.add(rid);
+  }
+
   // Tag outcomes and compute metrics per AE
   const transcriptMetricsByAE: Record<string, AETranscriptMetrics> = {};
   for (const ae of activeAEs) {
     const insights = transcriptsByRep[ae.id] || [];
-    // Tag outcomes: match transcript participants to deal participants
-    // Simple heuristic: if a transcript's non-rep participants appear in CW deals → "won",
-    // in CL deals → "lost", otherwise "pending"
     for (const insight of insights) {
-      // We don't have per-transcript participant emails in insights, so use date-based matching:
       // Find deals with demo_held_date matching the transcript date and same AE owner
       const matchingDeals = allDeals.filter((deal: any) => {
         const demoDate = getDemoHeldDate(deal);
         if (!demoDate || demoDate !== insight.date) return false;
         return OWNER_MAP[getVal(deal, "owner")] === ae.id;
       });
-      if (matchingDeals.length > 0) {
-        // Check if any matched deal reached CW or CL
-        let isWon = false, isLost = false;
-        for (const deal of matchingDeals) {
-          for (const pid of getDealPersonIds(deal)) {
-            if (cwPersonIds.has(pid)) isWon = true;
-          }
+      // Match transcript to a single deal: prefer title match, else pick first
+      let bestDeal: any = null;
+      if (matchingDeals.length === 1) {
+        bestDeal = matchingDeals[0];
+      } else if (matchingDeals.length > 1) {
+        const titleLower = (insight.title || "").toLowerCase();
+        bestDeal = matchingDeals.find((d: any) => {
+          const dealName = String(getVal(d, "name") || "").toLowerCase();
+          return dealName && titleLower.includes(dealName);
+        }) || matchingDeals[0];
+      }
+      if (bestDeal) {
+        const rid = bestDeal?.id?.record_id;
+        if (rid && cwDealRecordIds.has(rid)) {
+          insight.outcome = "won";
+        } else if (rid && clDealRecordIds.has(rid)) {
+          insight.outcome = "lost";
+        } else {
+          insight.outcome = "pending";
         }
-        if (!isWon) {
-          // Check closed lost
-          for (const deal of matchingDeals) {
-            const closeDate = getDealDate(deal);
-            if (closeDate) {
-              const inLost = closedLostDeals.some((ld: any) => {
-                for (const pid of getDealPersonIds(deal)) {
-                  const ldPids = getDealPersonIds(ld);
-                  if (ldPids.includes(pid)) return true;
-                }
-                return false;
-              });
-              if (inLost) isLost = true;
-            }
-          }
-        }
-        insight.outcome = isWon ? "won" : isLost ? "lost" : "pending";
       }
     }
     transcriptMetricsByAE[ae.id] = computeTranscriptMetrics(insights);
