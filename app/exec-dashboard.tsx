@@ -1112,6 +1112,7 @@ export default function ExecDashboard() {
 
   const [verification, setVerification] = useState<VerificationStatus | null>(null);
   const [startingVerification, setStartingVerification] = useState(false);
+  const [resendingSlack, setResendingSlack] = useState(false);
 
   const fetchVerification = useCallback(async (month: string) => {
     try {
@@ -1132,6 +1133,18 @@ export default function ExecDashboard() {
     } catch {}
     setStartingVerification(false);
   }, [selectedMonth, fetchVerification]);
+
+  const handleResendSlack = useCallback(async () => {
+    setResendingSlack(true);
+    try {
+      await fetch("/api/approval/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: selectedMonth, resend: true }),
+      });
+    } catch {}
+    setResendingSlack(false);
+  }, [selectedMonth]);
 
   const fetchLive = useCallback(async () => {
     setLoading(true); setError("");
@@ -1445,6 +1458,23 @@ export default function ExecDashboard() {
                   }}>
                     {verification.approvals.filter((a) => a.approved).length} of {verification.approvals.length} AEs approved
                   </div>
+                  <button
+                    onClick={handleResendSlack}
+                    disabled={resendingSlack}
+                    style={{
+                      padding: "4px 10px", borderRadius: 6,
+                      border: `1px solid ${C.primary}30`,
+                      background: "transparent",
+                      color: C.primary,
+                      cursor: resendingSlack ? "not-allowed" : "pointer",
+                      fontSize: 11, fontWeight: 500, fontFamily: F.b,
+                      opacity: resendingSlack ? 0.6 : 1,
+                      whiteSpace: "nowrap" as const,
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {resendingSlack ? "Sending…" : "Resend to Slack"}
+                  </button>
                   <div style={{
                     flex: 1, height: 4, background: "rgba(0,0,0,0.06)",
                     borderRadius: 100, overflow: "hidden",

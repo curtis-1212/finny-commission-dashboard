@@ -100,6 +100,7 @@ export function buildAEVerificationBlocks(
   commission: number,
   month: string,
   repId: string,
+  opts?: { alreadyApproved?: boolean; approvedAt?: string | null },
 ): any[] {
   const dealLines = closedWonDeals.length > 0
     ? closedWonDeals.map((d) => `• ${d.name} — ${fmt(d.value)}`).join("\n")
@@ -142,30 +143,40 @@ export function buildAEVerificationBlocks(
     },
   });
 
-  blocks.push({
-    type: "actions",
-    block_id: `verify_${month}_${repId}`,
-    elements: [
-      {
-        type: "button",
-        text: { type: "plain_text", text: "✅ Approve My Deals" },
-        style: "primary",
-        action_id: `approve_${month}_${repId}`,
-        confirm: {
-          title: { type: "plain_text", text: "Confirm Approval" },
-          text: { type: "mrkdwn", text: `Are you sure you want to approve your deals for *${monthLabel}*?\n\nCommission: *${fmt(commission)}*` },
-          confirm: { type: "plain_text", text: "Yes, Approve" },
-          deny: { type: "plain_text", text: "Cancel" },
+  if (opts?.alreadyApproved) {
+    const approvedTime = opts.approvedAt
+      ? new Date(opts.approvedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "previously";
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `✅ *Already approved* (${approvedTime})` },
+    });
+  } else {
+    blocks.push({
+      type: "actions",
+      block_id: `verify_${month}_${repId}`,
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "✅ Approve My Deals" },
+          style: "primary",
+          action_id: `approve_${month}_${repId}`,
+          confirm: {
+            title: { type: "plain_text", text: "Confirm Approval" },
+            text: { type: "mrkdwn", text: `Are you sure you want to approve your deals for *${monthLabel}*?\n\nCommission: *${fmt(commission)}*` },
+            confirm: { type: "plain_text", text: "Yes, Approve" },
+            deny: { type: "plain_text", text: "Cancel" },
+          },
         },
-      },
-      {
-        type: "button",
-        text: { type: "plain_text", text: "❌ Challenge" },
-        style: "danger",
-        action_id: `challenge_${month}_${repId}`,
-      },
-    ],
-  });
+        {
+          type: "button",
+          text: { type: "plain_text", text: "❌ Challenge" },
+          style: "danger",
+          action_id: `challenge_${month}_${repId}`,
+        },
+      ],
+    });
+  }
 
   return blocks;
 }

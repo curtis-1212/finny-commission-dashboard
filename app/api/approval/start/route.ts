@@ -1,12 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAppSession } from "@/lib/auth";
 import { getUserRole, isExec } from "@/lib/roles";
-import { startVerificationCycle } from "@/lib/approval";
+import { startVerificationCycle, getAllApprovalStates } from "@/lib/approval";
 import { getActiveAEs, getMonthRange, parseMonthParam } from "@/lib/commission-config";
 import { sendSlackBlocks, postSlackMessage, buildAEVerificationBlocks } from "@/lib/slack";
 import { computeDealSnapshot } from "@/lib/deal-snapshot";
 
 export const revalidate = 0;
+
+async function sendPerAESlackMessages(
+  activeAEs: ReturnType<typeof getActiveAEs>,
+  channelId: string,
+  monthLabel: string,
+  monthStr: string,
+  selectedMonth: string,
+  startedBy: string,
+  approvalStates?: Map<string, { approved: boolean; approvedAt: string | null }>,
+) {
+  // Send header message
+  await postSlackMessage(channelId, [
+    { type: "header", text: { type: "plain_text", text: `📋 Commission Verification Open — ${monthLabel}` } },
+    { type: "divider" },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `AEs, please review your deals below and approve or challenge.\nSent by ${startedBy} at ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET`,
+      },
+    },
+  ], `Commission Verification Open — ${monthLabel}`);
+
+  // Send individual deal messages per AE
+  for (const ae of activeAEs) {
+    try {
+      const snapshot = await computeDealSnapshot(ae.id, monthStr);
+      const approval = approvalStates?.get(ae.id);
+      const blocks = buildAEVerificationBlocks(
+        ae.name, monthLabel,
+        snapshot.closedWonDeals, snapshot.optOutDeals,
+        snapshot.grossARR, snapshot.optOutARR, snapshot.netARR, snapshot.commission,
+        selectedMonth, ae.id,
+        approval?.approved ? { alreadyApproved: true, approvedAt: approval.approvedAt } : undefined,
+      );
+      await postSlackMessage(channelId, blocks, `${ae.name} — Commission Verification`);
+    } catch (err) {
+      console.error(`Failed to send verification message for ${ae.name}:`, err);
+    }
+  }
+}
 
 export async function POST(request: NextRequest) {
   // Auth: exec or cron secret
@@ -29,47 +70,29 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const monthStr = body.month || null;
+    const resend = body.resend === true;
     const { year, month } = parseMonthParam(monthStr);
     const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
     const { label: monthLabel } = getMonthRange(year, month);
 
     const { cycle, aeIds, alreadyExists } = await startVerificationCycle(selectedMonth, startedBy);
+    const shouldSendSlack = !alreadyExists || resend;
 
-    // Send Slack notifications (only on first start)
-    if (!alreadyExists) {
+    if (shouldSendSlack) {
       const activeAEs = getActiveAEs(selectedMonth);
       const channelId = process.env.SLACK_CHANNEL_ID;
 
-      // Send per-AE verification messages with deal details + approve/challenge buttons
       if (channelId) {
-        // Send a header message first
-        await postSlackMessage(channelId, [
-          { type: "header", text: { type: "plain_text", text: `📋 Commission Verification Open — ${monthLabel}` } },
-          { type: "divider" },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `AEs, please review your deals below and approve or challenge.\nStarted by ${startedBy} at ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET`,
-            },
-          },
-        ], `Commission Verification Open — ${monthLabel}`);
-
-        // Send individual deal messages per AE
-        for (const ae of activeAEs) {
-          try {
-            const snapshot = await computeDealSnapshot(ae.id, monthStr);
-            const blocks = buildAEVerificationBlocks(
-              ae.name, monthLabel,
-              snapshot.closedWonDeals, snapshot.optOutDeals,
-              snapshot.grossARR, snapshot.optOutARR, snapshot.netARR, snapshot.commission,
-              selectedMonth, ae.id,
-            );
-            await postSlackMessage(channelId, blocks, `${ae.name} — Commission Verification`);
-          } catch (err) {
-            console.error(`Failed to send verification message for ${ae.name}:`, err);
-          }
+        // For resends, check which AEs have already approved
+        let approvalStates: Map<string, { approved: boolean; approvedAt: string | null }> | undefined;
+        if (resend) {
+          const allStates = await getAllApprovalStates(selectedMonth);
+          approvalStates = new Map(
+            allStates.map((s) => [s.repId, { approved: s.record?.approved ?? false, approvedAt: s.record?.approvedAt ?? null }])
+          );
         }
+
+        await sendPerAESlackMessages(activeAEs, channelId, monthLabel, selectedMonth, selectedMonth, startedBy, approvalStates);
       } else {
         // Fallback to webhook if no bot token/channel configured
         const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || "";
@@ -98,6 +121,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       alreadyExists,
+      resent: resend && alreadyExists,
       month: selectedMonth,
       aesRequested: aeIds,
       startedAt: cycle.startedAt,
