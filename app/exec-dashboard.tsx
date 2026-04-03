@@ -110,9 +110,11 @@ const F = {
 
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtK = (n: number) => {
-  if (Math.abs(n) >= 1000000) return "$" + (n / 1000000).toFixed(1) + "M";
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n / 1000) + "k";
-  return "$" + Math.round(n);
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1000000) return sign + "$" + (abs / 1000000).toFixed(1) + "M";
+  if (abs >= 1000) return sign + "$" + Math.round(abs / 1000) + "k";
+  return sign + "$" + Math.round(abs);
 };
 const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
 const fmtPct0 = (n: number) => (n * 100).toFixed(0) + "%";
@@ -244,14 +246,14 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
         }}>{initials}</div>
 
         {/* Name */}
-        <div style={{ flex: "0 0 120px", minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: F.d, letterSpacing: "-0.01em", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+        <div style={{ flex: "0 0 130px", minWidth: 0 }}>
+          <div title={name} style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: F.d, letterSpacing: "-0.01em", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
         </div>
 
         {/* Metrics row */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0, overflow: "hidden" }}>
           {/* Net ARR / Meetings */}
-          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50, position: "relative" }}>
+          <div style={{ flex: "1 1 65px", textAlign: "right" as const, minWidth: 55, position: "relative" }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{isBDR ? "Mtgs" : "Net ARR"}</div>
             <div style={{
               fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.text, letterSpacing: "-0.02em",
@@ -262,7 +264,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
 
           {/* Gross ARR */}
           {!isBDR && (
-            <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+            <div style={{ flex: "1 1 65px", textAlign: "right" as const, minWidth: 55 }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Gross ARR</div>
               <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.m, color: C.textSec, letterSpacing: "-0.02em" }}>
                 {fmtK(grossARR ?? 0)}
@@ -271,7 +273,7 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
           )}
 
           {/* Attainment */}
-          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+          <div style={{ flex: "1 1 55px", textAlign: "right" as const, minWidth: 50 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Attain.</div>
             <div style={{
               fontSize: 15, fontWeight: 700, fontFamily: F.m,
@@ -349,9 +351,9 @@ function PlanBar({ name, initials, actual, grossARR, quota, att, commission, dea
           )}
 
           {/* Commission */}
-          <div style={{ flex: "1 1 60px", textAlign: "right" as const, minWidth: 50 }}>
+          <div style={{ flex: "1 1 70px", textAlign: "right" as const, minWidth: 60 }}>
             <div style={{ fontSize: 10, color: C.textDim, fontFamily: F.b, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Comm.</div>
-            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.accent, letterSpacing: "-0.02em" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: F.m, color: C.accent, letterSpacing: "-0.02em", whiteSpace: "nowrap" as const }}>
               {fmtK(commission)}
             </div>
           </div>
